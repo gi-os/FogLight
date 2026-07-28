@@ -66,7 +66,8 @@ export default function TracksScreen() {
       }
       setImportStatus(
         `GPX: +${r.gpxAdded} new (${r.gpxTotal} total). ` +
-          `Fog of World tiles: +${r.fowAdded} new (${r.fowTotal} total).` +
+          `Fog of World tiles: +${r.fowAdded} new, ${r.fowFailed} failed (${r.fowTotal} total).` +
+          (r.firstError ? ` First error: ${r.firstError}` : "") +
           renderCheck
       );
       await refresh();

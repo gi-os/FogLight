@@ -185,6 +185,8 @@ export type ImportResult = {
   fowAdded: number;
   gpxTotal: number;
   fowTotal: number;
+  fowFailed: number;
+  firstError: string | null;
 };
 
 /**
@@ -204,7 +206,14 @@ export async function importNewGpx(): Promise<ImportResult> {
   const localGpx = new Set(await FileSystem.readDirectoryAsync(importsDir()));
   const localFow = new Set(await FileSystem.readDirectoryAsync(fowDir()));
 
-  const result: ImportResult = { gpxAdded: 0, fowAdded: 0, gpxTotal: 0, fowTotal: 0 };
+  const result: ImportResult = {
+    gpxAdded: 0,
+    fowAdded: 0,
+    gpxTotal: 0,
+    fowTotal: 0,
+    fowFailed: 0,
+    firstError: null,
+  };
 
   for (const entry of remote) {
     const isGpx = entry.name.toLowerCase().endsWith(".gpx");
@@ -226,12 +235,39 @@ export async function importNewGpx(): Promise<ImportResult> {
         `&authorization=${encodeURIComponent(`Bearer ${token}`)}`;
       try {
         const dl = await FileSystem.downloadAsync(url, dest);
-        if (dl.status === 200 && (await isValidFowFile(dest))) {
+        if (dl.status !== 200) {
+          result.fowFailed++;
+          if (!result.firstError) {
+            let body = "";
+            try {
+              body = (await FileSystem.readAsStringAsync(dest)).slice(0, 120);
+            } catch {
+              // binary/unreadable
+            }
+            result.firstError = `download HTTP ${dl.status} ${body}`;
+          }
+          await FileSystem.deleteAsync(dest, { idempotent: true });
+        } else if (await isValidFowFile(dest)) {
           result.fowAdded++;
         } else {
-          await FileSystem.deleteAsync(dest, { idempotent: true });
+          result.fowFailed++;
+          const info = await FileSystem.getInfoAsync(dest, { size: true }).catch(
+            () => null
+          );
+          if (!result.firstError) {
+            result.firstError = `native decode rejected fresh download (${
+              info && info.exists ? (info.size ?? "?") : "?"
+            } bytes)`;
+          }
+          // keep for inspection under a name the scanner ignores
+          await FileSystem.moveAsync({ from: dest, to: `${dest}.bad` }).catch(() =>
+            FileSystem.deleteAsync(dest, { idempotent: true })
+          );
         }
-      } catch {
+      } catch (e) {
+        result.fowFailed++;
+        if (!result.firstError)
+          result.firstError = `download: ${e instanceof Error ? e.message : String(e)}`;
         await FileSystem.deleteAsync(dest, { idempotent: true }).catch(() => undefined);
       }
       continue;
