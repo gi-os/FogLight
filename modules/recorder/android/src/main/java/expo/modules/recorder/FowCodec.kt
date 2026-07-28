@@ -123,9 +123,9 @@ object FowCodec {
 
     val blocks = decodeTile(src) ?: return null
     val pxPerBlock = sizePx / TILE_WIDTH
+    if (pxPerBlock <= 0) return null
     val cellsPerPx = BITMAP_WIDTH / pxPerBlock
-    val bytesPerPxX = cellsPerPx / 8
-    if (pxPerBlock <= 0 || bytesPerPxX <= 0) return null
+    if (cellsPerPx <= 0) return null
 
     val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
     for ((pos, bitmap) in blocks) {
@@ -134,11 +134,10 @@ object FowCodec {
       for (py in 0 until pxPerBlock) {
         for (px in 0 until pxPerBlock) {
           var any = false
-          val rowStart = py * cellsPerPx
-          outer@ for (r in 0 until cellsPerPx) {
-            val j = rowStart + r
-            for (b in 0 until bytesPerPxX) {
-              if (bitmap[(px * bytesPerPxX + b) + j * 8].toInt() != 0) {
+          outer@ for (cy in py * cellsPerPx until (py + 1) * cellsPerPx) {
+            for (cx in px * cellsPerPx until (px + 1) * cellsPerPx) {
+              val bit = bitmap[(cx shr 3) + cy * 8].toInt() and (1 shl (7 - (cx and 7)))
+              if (bit != 0) {
                 any = true
                 break@outer
               }
@@ -148,9 +147,48 @@ object FowCodec {
         }
       }
     }
+    featherAlpha(bmp, radius = (sizePx / 512).coerceIn(1, 4), rgb = color and 0x00FFFFFF)
     FileOutputStream(out).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     bmp.recycle()
     return out.absolutePath
+  }
+
+  /**
+   * Two-pass box blur on the alpha channel only (RGB held constant) —
+   * feathers explored-area edges into soft fog without dark fringes.
+   */
+  private fun featherAlpha(bmp: Bitmap, radius: Int, rgb: Int) {
+    if (radius <= 0) return
+    val w = bmp.width
+    val h = bmp.height
+    val px = IntArray(w * h)
+    bmp.getPixels(px, 0, w, 0, 0, w, h)
+    val a = IntArray(w * h)
+    for (i in px.indices) a[i] = px[i] ushr 24
+    val tmp = IntArray(w * h)
+    val div = radius * 2 + 1
+    // horizontal
+    for (y in 0 until h) {
+      val row = y * w
+      var sum = 0
+      for (x in -radius..radius) sum += a[row + x.coerceIn(0, w - 1)]
+      for (x in 0 until w) {
+        tmp[row + x] = sum / div
+        sum += a[row + (x + radius + 1).coerceAtMost(w - 1)] -
+          a[row + (x - radius).coerceAtLeast(0)]
+      }
+    }
+    // vertical
+    for (x in 0 until w) {
+      var sum = 0
+      for (y in -radius..radius) sum += tmp[y.coerceIn(0, h - 1) * w + x]
+      for (y in 0 until h) {
+        px[y * w + x] = ((sum / div) shl 24) or rgb
+        sum += tmp[(y + radius + 1).coerceAtMost(h - 1) * w + x] -
+          tmp[(y - radius).coerceAtLeast(0) * w + x]
+      }
+    }
+    bmp.setPixels(px, 0, w, 0, 0, w, h)
   }
 
   /** One world-spanning PNG plotting every visited block across all tiles in dir. */
@@ -177,6 +215,7 @@ object FowCodec {
         bmp.setPixel(x, y, color)
       }
     }
+    featherAlpha(bmp, radius = 1, rgb = color and 0x00FFFFFF)
     FileOutputStream(out).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     bmp.recycle()
     return out.absolutePath

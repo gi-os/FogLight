@@ -32,9 +32,12 @@ import { n } from "@/utils/scaling";
 
 const TRAIL_POLL_MS = 15_000;
 const FOG_POLL_MS = 2_500;
-const TILE_PX = 1024;
-const OVERVIEW_PX = 2048;
-const OVERVIEW_MAX_ZOOM = 8;
+const OVERVIEW_PX = 4096;
+const TILE_MIN_ZOOM = 6.5;
+const HIRES_ZOOM = 12.5;
+// Crossfade: overview fades out z7->9 while detail tiles fade in z7->8.5
+const OVERVIEW_OPACITY = ["interpolate", ["linear"], ["zoom"], 7, 0.95, 9, 0] as const;
+const TILE_OPACITY = ["interpolate", ["linear"], ["zoom"], 7, 0, 8.5, 0.95] as const;
 // ARGB as numbers (passed to the native rasterizer)
 const EXPLORED_DARK = 0xb4ffffff; // white @ ~70% on the dark map
 const EXPLORED_LIGHT = 0x59000000; // black @ ~35% on the inverted map
@@ -50,7 +53,6 @@ export default function MapScreen() {
   const fowTilesRef = useRef<FowTile[]>([]);
   const [overviewUri, setOverviewUri] = useState<string | null>(null);
   const overviewUriRef = useRef<string | null>(null);
-  const [showOverview, setShowOverview] = useState(true);
   const [tileImages, setTileImages] = useState<
     { key: string; uri: string; corners: [number, number][] }[]
   >([]);
@@ -106,8 +108,7 @@ export default function MapScreen() {
         }
         try {
           const zoom = await map.getZoom();
-          setShowOverview(zoom < OVERVIEW_MAX_ZOOM);
-          if (zoom < OVERVIEW_MAX_ZOOM) {
+          if (zoom < TILE_MIN_ZOOM) {
             setTileImages([]);
             if (!cancelled)
               setFogDebug(
@@ -115,15 +116,16 @@ export default function MapScreen() {
               );
             return;
           }
+          const sizePx = zoom >= HIRES_ZOOM ? 2048 : 1024;
           const [ne, sw] = await map.getVisibleBounds();
-          const needed = tilesInBounds(fowTilesRef.current, ne, sw);
+          const needed = tilesInBounds(fowTilesRef.current, ne, sw, 16);
           let failed = 0;
           const next: { key: string; uri: string; corners: [number, number][] }[] = [];
           for (const tile of needed) {
-            const key = `fow-${tile.id}`;
+            const key = `fow-${tile.id}-${sizePx}`;
             let uri = renderedRef.current.get(key);
             if (!uri) {
-              const rendered = await fowRenderTile(tile.path, TILE_PX, color);
+              const rendered = await fowRenderTile(tile.path, sizePx, color);
               if (!rendered) {
                 failed++;
                 continue;
@@ -136,7 +138,7 @@ export default function MapScreen() {
           if (!cancelled) {
             setTileImages(next);
             setFogDebug(
-              `z${zoom.toFixed(1)} ${next.length}/${needed.length} fog imgs` +
+              `z${zoom.toFixed(1)} ${next.length}/${needed.length} fog imgs @${sizePx}` +
                 (failed ? ` (${failed} failed)` : "")
             );
           }
@@ -158,7 +160,10 @@ export default function MapScreen() {
           setFowTiles(tiles);
           if (tiles.length > 0) {
             const color = invertColors ? EXPLORED_LIGHT : EXPLORED_DARK;
-            const uri = await fowRenderOverview(fowDirPath(), OVERVIEW_PX, color);
+            let uri = await fowRenderOverview(fowDirPath(), OVERVIEW_PX, color);
+            if (!uri) {
+              uri = await fowRenderOverview(fowDirPath(), OVERVIEW_PX / 2, color);
+            }
             if (cancelled) return;
             if (uri) {
               overviewUriRef.current = `file://${uri}`;
@@ -227,7 +232,7 @@ export default function MapScreen() {
         style={styles.map}
       >
         <Camera ref={cameraRef} />
-        {overviewUri && showOverview && fowTiles.length > 0 && (
+        {overviewUri && fowTiles.length > 0 && (
           <ImageSource
             id="fow-overview"
             url={overviewUri}
@@ -235,24 +240,29 @@ export default function MapScreen() {
           >
             <RasterLayer
               id="fow-overview-layer"
-              style={{ rasterOpacity: 0.9, rasterResampling: "nearest" }}
+              style={{
+                rasterOpacity: OVERVIEW_OPACITY as unknown as number,
+                rasterFadeDuration: 300,
+              }}
             />
           </ImageSource>
         )}
-        {!showOverview &&
-          tileImages.map((img) => (
-            <ImageSource
-              id={img.key}
-              key={img.key}
-              url={img.uri}
-              coordinates={img.corners}
-            >
-              <RasterLayer
-                id={`${img.key}-layer`}
-                style={{ rasterOpacity: 0.9, rasterResampling: "nearest" }}
-              />
-            </ImageSource>
-          ))}
+        {tileImages.map((img) => (
+          <ImageSource
+            id={img.key}
+            key={img.key}
+            url={img.uri}
+            coordinates={img.corners}
+          >
+            <RasterLayer
+              id={`${img.key}-layer`}
+              style={{
+                rasterOpacity: TILE_OPACITY as unknown as number,
+                rasterFadeDuration: 300,
+              }}
+            />
+          </ImageSource>
+        ))}
         {importedTrails && (
           <ShapeSource id="imported-source" shape={importedTrails}>
             <LineLayer
