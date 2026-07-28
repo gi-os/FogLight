@@ -31,7 +31,8 @@
         }
       ],
       "./plugins/withAndroidConfigChanges",
-      "./plugins/withAndroidTheme"
+      "./plugins/withAndroidTheme",
+      "./plugins/withLocalExpoModules"
     ],
     "experiments": {
       "typedRoutes": true
