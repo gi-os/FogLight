@@ -39,9 +39,13 @@ export async function fowRenderTile(
   path: string,
   sizePx: number,
   color: number,
-  style: FogStyle = 0
+  style: FogStyle = 0,
+  blurRadius = 1
 ): Promise<string | null> {
-  return (await RecorderModule?.fowRenderTile(path, sizePx, color, style)) ?? null;
+  return (
+    (await RecorderModule?.fowRenderTile(path, sizePx, color, style, blurRadius)) ??
+    null
+  );
 }
 
 /** Rasterize a world overview PNG from a directory of FoW tile files. */

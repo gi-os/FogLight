@@ -114,11 +114,21 @@ object FowCodec {
    * Rasterize one tile to a transparent PNG (visited cells -> color).
    * sizePx must keep cells-per-pixel a multiple of 8 (use 1024, 512 or 256).
    */
-  fun renderTile(context: Context, path: String, sizePx: Int, color: Int, style: Int): String? {
+  fun renderTile(
+    context: Context,
+    path: String,
+    sizePx: Int,
+    color: Int,
+    style: Int,
+    blurRadius: Int,
+  ): String? {
     val src = File(path)
     if (!src.exists()) return null
     val outDir = File(context.cacheDir, "fow").apply { mkdirs() }
-    val out = File(outDir, "${src.name}_${sizePx}_${color.toUInt().toString(16)}_$style.png")
+    val out = File(
+      outDir,
+      "${src.name}_${sizePx}_${color.toUInt().toString(16)}_${style}_r$blurRadius.png"
+    )
     if (out.exists() && out.lastModified() >= src.lastModified()) return out.absolutePath
 
     val blocks = decodeTile(src) ?: return null
@@ -129,7 +139,7 @@ object FowCodec {
     val cellsPerRegion = cellsPerPx * cellsPerPx
 
     return try {
-      renderTileInner(src, out, blocks, sizePx, pxPerBlock, cellsPerPx, cellsPerRegion, color, style)
+      renderTileInner(src, out, blocks, sizePx, pxPerBlock, cellsPerPx, cellsPerRegion, color, style, blurRadius)
     } catch (_: OutOfMemoryError) {
       null
     }
@@ -145,6 +155,7 @@ object FowCodec {
     cellsPerRegion: Int,
     color: Int,
     style: Int,
+    blurRadius: Int,
   ): String {
     // Visited-coverage grid (0..255 per pixel), blurred, then colorized as
     // dark fog with a glowing rim along clearing boundaries.
@@ -174,17 +185,18 @@ object FowCodec {
         // lines stay bold instead of dropping below a coverage threshold.
         for (i in frac.indices) frac[i] = if (frac[i] > 0) 255 else 0
         if (style == STYLE_PIXEL2X) {
-          val doubled = scale2x(frac, sizePx, sizePx)
-          bmp = Bitmap.createBitmap(sizePx * 2, sizePx * 2, Bitmap.Config.ARGB_8888)
-          bmp.setPixels(colorize(doubled, color), 0, sizePx * 2, 0, 0, sizePx * 2, sizePx * 2)
+          // Scale4x: EPX applied twice — rounder curves than a single pass.
+          val quad = scale2x(scale2x(frac, sizePx, sizePx), sizePx * 2, sizePx * 2)
+          bmp = Bitmap.createBitmap(sizePx * 4, sizePx * 4, Bitmap.Config.ARGB_8888)
+          bmp.setPixels(colorize(quad, color), 0, sizePx * 4, 0, 0, sizePx * 4, sizePx * 4)
         } else {
           bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
           bmp.setPixels(colorize(frac, color), 0, sizePx, 0, 0, sizePx, sizePx)
         }
       }
       else -> {
-        if (style != STYLE_SHARP) {
-          blurGrid(frac, sizePx, sizePx, radius = 1)
+        if (style != STYLE_SHARP && blurRadius > 0) {
+          blurGrid(frac, sizePx, sizePx, radius = blurRadius)
         }
         bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
         bmp.setPixels(colorize(frac, color), 0, sizePx, 0, 0, sizePx, sizePx)

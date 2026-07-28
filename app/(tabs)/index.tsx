@@ -83,6 +83,7 @@ export default function MapScreen() {
   const [fogStyle, setFogStyle] = useState<FogStyle>(0);
   const [lightMap, setLightMap] = useState(false);
   const [fogColorName, setFogColorName] = useState("black");
+  const [blurRadius, setBlurRadius] = useState(1);
   const [initialCam, setInitialCam] = useState<
     { center: [number, number]; zoom: number } | null | undefined
   >(undefined); // undefined = still loading, null = none saved
@@ -195,17 +196,29 @@ export default function MapScreen() {
             fowTilesRef.current,
             ne,
             sw,
-            sizePx === 4096 ? 4 : 16
+            sizePx === 4096 || fogStyle === 2 ? 4 : 16
           );
           let failed = 0;
           const next: { key: string; uri: string; corners: Corners }[] = [];
           for (const tile of needed) {
-            const key = `fow-${tile.id}-${sizePx}-${fogColor}-${fogStyle}`;
+            const key = `fow-${tile.id}-${sizePx}-${fogColor}-${fogStyle}-${blurRadius}`;
             let uri = renderedRef.current.get(key);
             if (!uri) {
-              let rendered = await fowRenderTile(tile.path, sizePx, fogColor, fogStyle);
+              let rendered = await fowRenderTile(
+                tile.path,
+                sizePx,
+                fogColor,
+                fogStyle,
+                blurRadius
+              );
               if (!rendered && sizePx > 2048) {
-                rendered = await fowRenderTile(tile.path, 2048, fogColor, fogStyle);
+                rendered = await fowRenderTile(
+                  tile.path,
+                  2048,
+                  fogColor,
+                  fogStyle,
+                  blurRadius
+                );
               }
               if (!rendered) {
                 failed++;
@@ -260,14 +273,15 @@ export default function MapScreen() {
       Promise.all([
         AsyncStorage.getItem("fogStyle"),
         AsyncStorage.getItem("fogScale2x"),
-        AsyncStorage.getItem("fogBlur"),
+        AsyncStorage.getItem("fogBlurRadius"),
       ])
-        .then(([styleRaw, s2xRaw, blurRaw]) => {
+        .then(([styleRaw, s2xRaw, radiusRaw]) => {
           if (cancelled) return;
           const style = styleRaw != null ? JSON.parse(styleRaw) : "smooth";
           const s2x = s2xRaw != null ? JSON.parse(s2xRaw) === true : true;
-          const blur = blurRaw != null ? JSON.parse(blurRaw) === true : true;
-          setFogStyle(style === "pixel" ? (s2x ? 2 : 1) : blur ? 0 : 3);
+          const radius = radiusRaw != null ? Number(JSON.parse(radiusRaw)) : 1;
+          setFogStyle(style === "pixel" ? (s2x ? 2 : 1) : 0);
+          setBlurRadius(Number.isFinite(radius) ? radius : 1);
         })
         .catch(() => undefined);
 
@@ -325,7 +339,7 @@ export default function MapScreen() {
         if (pollId != null) clearInterval(pollId);
         clearInterval(fogPollId);
       };
-    }, [lightBase, fogColor, fogStyle])
+    }, [lightBase, fogColor, fogStyle, blurRadius])
   );
 
   // World polygon with holes where hi-res fog tiles are rendered — fogs

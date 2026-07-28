@@ -36,7 +36,7 @@ export default function SettingsScreen() {
   const [fogDebugOn, setFogDebugOn] = usePersistedState("fogDebugEnabled", false);
   const [fogStyle, setFogStyle] = usePersistedState("fogStyle", "smooth");
   const [fogScale2x, setFogScale2x] = usePersistedState("fogScale2x", true);
-  const [fogBlur, setFogBlur] = usePersistedState("fogBlur", true);
+  const [fogBlurRadius, setFogBlurRadius] = usePersistedState("fogBlurRadius", 1);
   const [lightMap, setLightMap] = usePersistedState("lightMap", false);
   const [fogColorName, setFogColorName] = usePersistedState("fogColorName", "black");
   const [appKey, setAppKeyState] = useState("");
@@ -121,10 +121,14 @@ export default function SettingsScreen() {
         />
       )}
       {fogStyle === "smooth" && (
-        <ToggleSwitch
+        <SliderRow
+          format={(v) => (v === 0 ? "Off" : String(v))}
           label="Edge Blur"
-          onValueChange={setFogBlur}
-          value={fogBlur}
+          max={6}
+          min={0}
+          onChange={setFogBlurRadius}
+          step={1}
+          value={fogBlurRadius}
         />
       )}
 
