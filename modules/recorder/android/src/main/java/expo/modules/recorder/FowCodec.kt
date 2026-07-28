@@ -128,6 +128,24 @@ object FowCodec {
     if (cellsPerPx <= 0) return null
     val cellsPerRegion = cellsPerPx * cellsPerPx
 
+    return try {
+      renderTileInner(src, out, blocks, sizePx, pxPerBlock, cellsPerPx, cellsPerRegion, color, style)
+    } catch (_: OutOfMemoryError) {
+      null
+    }
+  }
+
+  private fun renderTileInner(
+    src: File,
+    out: File,
+    blocks: Map<Pair<Int, Int>, ByteArray>,
+    sizePx: Int,
+    pxPerBlock: Int,
+    cellsPerPx: Int,
+    cellsPerRegion: Int,
+    color: Int,
+    style: Int,
+  ): String {
     // Visited-coverage grid (0..255 per pixel), blurred, then colorized as
     // dark fog with a glowing rim along clearing boundaries.
     val frac = IntArray(sizePx * sizePx)
@@ -237,16 +255,15 @@ object FowCodec {
     }
   }
 
-  /** Coverage (0..255) -> ARGB: fog alpha thins linearly with coverage. */
+  /** Coverage (0..255) -> ARGB in place: fog alpha thins with coverage. */
   private fun colorize(frac: IntArray, fog: Int): IntArray {
     val fogA = (fog ushr 24) and 0xFF
     val rgb = fog and 0x00FFFFFF
-    val out = IntArray(frac.size)
-    for (i in out.indices) {
+    for (i in frac.indices) {
       val alpha = (fogA * (255 - frac[i])) / 255
-      out[i] = (alpha shl 24) or rgb
+      frac[i] = (alpha shl 24) or rgb
     }
-    return out
+    return frac
   }
 
   /**

@@ -181,19 +181,32 @@ export default function MapScreen() {
               );
             return;
           }
-          const sizePx = fogStyle === 2 ? 1024 : zoom >= HIRES_ZOOM ? 2048 : 1024;
+          const sizePx =
+            fogStyle === 2
+              ? 1024
+              : zoom >= HIRES_ZOOM
+                ? 4096
+                : 2048;
           const [ne, sw] = (await map.getVisibleBounds()) as [
             [number, number],
             [number, number],
           ];
-          const needed = tilesInBounds(fowTilesRef.current, ne, sw, 16);
+          const needed = tilesInBounds(
+            fowTilesRef.current,
+            ne,
+            sw,
+            sizePx === 4096 ? 4 : 16
+          );
           let failed = 0;
           const next: { key: string; uri: string; corners: Corners }[] = [];
           for (const tile of needed) {
             const key = `fow-${tile.id}-${sizePx}-${fogColor}-${fogStyle}`;
             let uri = renderedRef.current.get(key);
             if (!uri) {
-              const rendered = await fowRenderTile(tile.path, sizePx, fogColor, fogStyle);
+              let rendered = await fowRenderTile(tile.path, sizePx, fogColor, fogStyle);
+              if (!rendered && sizePx > 2048) {
+                rendered = await fowRenderTile(tile.path, 2048, fogColor, fogStyle);
+              }
               if (!rendered) {
                 failed++;
                 continue;
