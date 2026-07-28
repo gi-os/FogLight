@@ -25,12 +25,22 @@ export function buildMapStyle(invertColors = false, offlineOnly = false) {
       },
     },
     layers: [
-      { id: "background", type: "background", paint: { "background-color": c.background } },
+      { id: "background", type: "background", paint: { "background-color": invertColors ? c.background : "#161616" } },
       { id: "landcover", type: "fill", source: "osm", "source-layer": "landcover", paint: { "fill-color": c.landcover } },
       { id: "landuse", type: "fill", source: "osm", "source-layer": "landuse", paint: { "fill-color": c.landuse } },
       { id: "park", type: "fill", source: "osm", "source-layer": "park", paint: { "fill-color": c.park } },
-      { id: "water", type: "fill", source: "osm", "source-layer": "water", paint: { "fill-color": c.waterFill, "fill-opacity": 0.3 } },
-      { id: "waterway", type: "line", source: "osm", "source-layer": "waterway", paint: { "line-color": c.waterway, "line-width": 1, "line-opacity": 0.3 } },
+      // Solid water so land/ocean read clearly even at world zoom.
+      {
+        id: "water", type: "fill", source: "osm", "source-layer": "water",
+        paint: { "fill-color": invertColors ? "#c2c8ca" : "#050607", "fill-opacity": 1 },
+      },
+      { id: "waterway", type: "line", source: "osm", "source-layer": "waterway", paint: { "line-color": c.waterway, "line-width": 1, "line-opacity": 0.5 } },
+      // Country borders help continents read when zoomed out.
+      {
+        id: "boundary-country", type: "line", source: "osm", "source-layer": "boundary",
+        filter: ["<=", ["get", "admin_level"], 2],
+        paint: { "line-color": invertColors ? "#b0b0b0" : "#3a3a3a", "line-width": 1 },
+      },
       {
         id: "roads-minor", type: "line", source: "osm", "source-layer": "transportation",
         filter: ["match", ["get", "class"], ["minor", "service", "track", "path"], true, false],

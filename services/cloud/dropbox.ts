@@ -1,0 +1,196 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as FileSystem from "expo-file-system/legacy";
+import { Linking } from "react-native";
+
+/**
+ * Dropbox OAuth2 PKCE (method "plain") + GPX import.
+ * Create a "Scoped access / App folder" app at dropbox.com/developers/apps,
+ * enable files.metadata.read + files.content.read/write scopes, and add
+ * redirect URI: lightfog://oauth
+ */
+export const REDIRECT_URI = "lightfog://oauth";
+
+const KEY_APP_KEY = "dropboxAppKey";
+const KEY_AUTH = "dropboxAuth";
+const KEY_VERIFIER = "dropboxVerifier";
+
+type Auth = {
+  refreshToken: string;
+  accessToken: string;
+  expiresAt: number; // epoch ms
+};
+
+function randomVerifier(length = 64): string {
+  const chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+  let out = "";
+  for (let i = 0; i < length; i++) {
+    out += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return out;
+}
+
+export async function getAppKey(): Promise<string | null> {
+  const raw = await AsyncStorage.getItem(KEY_APP_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+export async function setAppKey(key: string): Promise<void> {
+  await AsyncStorage.setItem(KEY_APP_KEY, JSON.stringify(key.trim()));
+}
+
+export async function isConnected(): Promise<boolean> {
+  return (await AsyncStorage.getItem(KEY_AUTH)) != null;
+}
+
+export async function disconnect(): Promise<void> {
+  await AsyncStorage.removeItem(KEY_AUTH);
+}
+
+/** Step 1: open the Dropbox consent page in the browser. */
+export async function startAuth(): Promise<void> {
+  const appKey = await getAppKey();
+  if (!appKey) throw new Error("Set your Dropbox app key first.");
+  const verifier = randomVerifier();
+  await AsyncStorage.setItem(KEY_VERIFIER, verifier);
+  const url =
+    "https://www.dropbox.com/oauth2/authorize" +
+    `?client_id=${encodeURIComponent(appKey)}` +
+    "&response_type=code" +
+    `&code_challenge=${encodeURIComponent(verifier)}` +
+    "&code_challenge_method=plain" +
+    "&token_access_type=offline" +
+    `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
+  await Linking.openURL(url);
+}
+
+/** Step 2: called from the oauth deep-link route with ?code=... */
+export async function finishAuth(code: string): Promise<void> {
+  const appKey = await getAppKey();
+  const verifier = await AsyncStorage.getItem(KEY_VERIFIER);
+  if (!appKey || !verifier) throw new Error("No pending authorization.");
+  const body =
+    `code=${encodeURIComponent(code)}` +
+    "&grant_type=authorization_code" +
+    `&client_id=${encodeURIComponent(appKey)}` +
+    `&code_verifier=${encodeURIComponent(verifier)}` +
+    `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
+  const res = await fetch("https://api.dropboxapi.com/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  if (!res.ok) throw new Error(`Token exchange failed: ${await res.text()}`);
+  const json = await res.json();
+  const auth: Auth = {
+    refreshToken: json.refresh_token,
+    accessToken: json.access_token,
+    expiresAt: Date.now() + (json.expires_in - 60) * 1000,
+  };
+  await AsyncStorage.setItem(KEY_AUTH, JSON.stringify(auth));
+  await AsyncStorage.removeItem(KEY_VERIFIER);
+}
+
+async function getAccessToken(): Promise<string> {
+  const raw = await AsyncStorage.getItem(KEY_AUTH);
+  if (!raw) throw new Error("Dropbox not connected.");
+  let auth: Auth = JSON.parse(raw);
+  if (Date.now() >= auth.expiresAt) {
+    const appKey = await getAppKey();
+    const body =
+      `grant_type=refresh_token` +
+      `&refresh_token=${encodeURIComponent(auth.refreshToken)}` +
+      `&client_id=${encodeURIComponent(appKey ?? "")}`;
+    const res = await fetch("https://api.dropboxapi.com/oauth2/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+    if (!res.ok) throw new Error(`Token refresh failed: ${await res.text()}`);
+    const json = await res.json();
+    auth = {
+      ...auth,
+      accessToken: json.access_token,
+      expiresAt: Date.now() + (json.expires_in - 60) * 1000,
+    };
+    await AsyncStorage.setItem(KEY_AUTH, JSON.stringify(auth));
+  }
+  return auth.accessToken;
+}
+
+type DbxEntry = { ".tag": string; name: string; path_lower: string };
+
+/** List every .gpx file in the app folder (recursive). */
+export async function listGpxFiles(): Promise<DbxEntry[]> {
+  const token = await getAccessToken();
+  const entries: DbxEntry[] = [];
+  let body: Record<string, unknown> = { path: "", recursive: true };
+  let url = "https://api.dropboxapi.com/2/files/list_folder";
+  for (;;) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`list_folder failed: ${await res.text()}`);
+    const json = await res.json();
+    entries.push(...json.entries);
+    if (!json.has_more) break;
+    url = "https://api.dropboxapi.com/2/files/list_folder/continue";
+    body = { cursor: json.cursor };
+  }
+  return entries.filter(
+    (e) => e[".tag"] === "file" && e.name.toLowerCase().endsWith(".gpx")
+  );
+}
+
+export function importsDir(): string {
+  return `${FileSystem.documentDirectory}imports`;
+}
+
+/** Download all .gpx files not yet imported. Returns [newCount, totalRemote]. */
+export async function importNewGpx(): Promise<[number, number]> {
+  const token = await getAccessToken();
+  const remote = await listGpxFiles();
+  await FileSystem.makeDirectoryAsync(importsDir(), { intermediates: true }).catch(
+    () => undefined
+  );
+  const local = new Set(await FileSystem.readDirectoryAsync(importsDir()));
+  let added = 0;
+  for (const entry of remote) {
+    if (local.has(entry.name)) continue;
+    const res = await fetch("https://content.dropboxapi.com/2/files/download", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Dropbox-API-Arg": JSON.stringify({ path: entry.path_lower }),
+      },
+    });
+    if (!res.ok) continue;
+    const text = await res.text();
+    await FileSystem.writeAsStringAsync(`${importsDir()}/${entry.name}`, text);
+    added++;
+  }
+  return [added, remote.length];
+}
+
+export async function listImported(): Promise<string[]> {
+  try {
+    const files = await FileSystem.readDirectoryAsync(importsDir());
+    return files.filter((f) => f.toLowerCase().endsWith(".gpx")).sort();
+  } catch {
+    return [];
+  }
+}
+
+export async function readImported(name: string): Promise<string> {
+  return FileSystem.readAsStringAsync(`${importsDir()}/${name}`);
+}

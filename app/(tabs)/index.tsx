@@ -13,7 +13,9 @@ import { PermissionsAndroid, StyleSheet, View } from "react-native";
 import { HapticPressable } from "@/components/HapticPressable";
 import { StyledText } from "@/components/StyledText";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
+import { listImported, readImported } from "@/services/cloud/dropbox";
 import { readDay, todayKey, toLineString } from "@/services/trackStore";
+import { parseGpx } from "@/utils/parseGpx";
 import { buildMapStyle, trailColor } from "@/utils/mapStyle";
 import { n } from "@/utils/scaling";
 
@@ -24,6 +26,7 @@ export default function MapScreen() {
   const cameraRef = useRef<CameraRef>(null);
   const [coords, setCoords] = useState<[number, number] | null>(null);
   const [trail, setTrail] = useState<ReturnType<typeof toLineString> | null>(null);
+  const [importedTrails, setImportedTrails] = useState<GeoJSON.FeatureCollection | null>(null);
   const hasCentered = useRef(false);
 
   const mapStyle = useMemo(() => buildMapStyle(invertColors), [invertColors]);
@@ -64,6 +67,28 @@ export default function MapScreen() {
       loadTrail();
       pollId = setInterval(loadTrail, TRAIL_POLL_MS);
 
+      (async () => {
+        const names = await listImported();
+        const features: GeoJSON.Feature[] = [];
+        for (const name of names) {
+          try {
+            const route = parseGpx(await readImported(name));
+            if (route && route.geojson.geometry.coordinates.length > 1) {
+              features.push(route.geojson);
+            }
+          } catch {
+            // skip unreadable file
+          }
+        }
+        if (!cancelled) {
+          setImportedTrails(
+            features.length > 0
+              ? { type: "FeatureCollection", features }
+              : null
+          );
+        }
+      })();
+
       return () => {
         cancelled = true;
         if (watchId != null) Geolocation.clearWatch(watchId);
@@ -88,10 +113,25 @@ export default function MapScreen() {
         attributionEnabled={false}
         compassEnabled={false}
         logoEnabled={false}
+        pitchEnabled={false}
+        rotateEnabled={false}
         mapStyle={mapStyle}
         style={styles.map}
       >
         <Camera ref={cameraRef} />
+        {importedTrails && (
+          <ShapeSource id="imported-source" shape={importedTrails}>
+            <LineLayer
+              id="imported-lines"
+              style={{
+                lineColor: invertColors ? "#888888" : "#777777",
+                lineWidth: 2,
+                lineCap: "round",
+                lineJoin: "round",
+              }}
+            />
+          </ShapeSource>
+        )}
         {trail && (
           <ShapeSource id="trail-source" shape={trail}>
             <LineLayer

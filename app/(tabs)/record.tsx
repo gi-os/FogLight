@@ -1,11 +1,17 @@
+import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import { PermissionsAndroid } from "react-native";
-import { useFocusEffect } from "expo-router";
-import { isRecording, startRecording, stopRecording } from "recorder";
+import {
+  ensureRunning,
+  isRecording,
+  isServiceAlive,
+  startRecording,
+  stopRecording,
+} from "recorder";
 import ContentContainer from "@/components/ContentContainer";
+import { OptionsSelector } from "@/components/OptionsSelector";
 import { StyledButton } from "@/components/StyledButton";
 import { StyledText } from "@/components/StyledText";
-import { OptionsSelector } from "@/components/OptionsSelector";
 import { usePersistedState } from "@/hooks/usePersistedState";
 import { readDay, todayKey } from "@/services/trackStore";
 import { n } from "@/utils/scaling";
@@ -20,20 +26,25 @@ const INTERVAL_MS: Record<string, number> = {
 
 export default function RecordScreen() {
   const [running, setRunning] = useState(false);
+  const [alive, setAlive] = useState(false);
   const [pointsToday, setPointsToday] = useState(0);
   const [interval, setIntervalPref] = usePersistedState("recordInterval", "10s");
 
   useFocusEffect(
     useCallback(() => {
+      // Self-heal: if recording is on but the OS killed the service, restart it.
+      ensureRunning(INTERVAL_MS[interval] ?? 10_000);
       setRunning(isRecording());
+      setAlive(isServiceAlive());
       readDay(todayKey()).then((pts) => setPointsToday(pts.length));
-    }, [])
+    }, [interval])
   );
 
   const toggle = async () => {
     if (running) {
       stopRecording();
       setRunning(false);
+      setAlive(false);
       return;
     }
     const fine = await PermissionsAndroid.request(
@@ -45,7 +56,14 @@ export default function RecordScreen() {
     ).catch(() => undefined);
     startRecording(INTERVAL_MS[interval] ?? 10_000);
     setRunning(true);
+    setAlive(true);
   };
+
+  const statusLine = running
+    ? alive
+      ? "Recording — leave it running, the fog clears itself."
+      : "Recording enabled — service restarting…"
+    : "Not recording.";
 
   return (
     <ContentContainer headerTitle="Record" hideBackButton>
@@ -62,7 +80,7 @@ export default function RecordScreen() {
         selectedValue={interval}
       />
       <StyledText style={{ fontSize: n(14), marginTop: n(16) }}>
-        {running ? "Recording — leave it running, the fog clears itself." : "Not recording."}
+        {statusLine}
       </StyledText>
       <StyledText style={{ fontSize: n(14), marginTop: n(8) }}>
         Points today: {pointsToday}
