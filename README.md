@@ -87,17 +87,21 @@ the versions the template is known to work with, because codegen breaks on a mis
 
 ## Origin and credits
 
-- **[vandamd](https://github.com/vandamd)** wrote
-  [light-template](https://github.com/vandamd/light-template), the Expo plus MapLibre
-  starter this app forks. The component set, the `n()` scaling helper, the
-  `ContentContainer` pattern and the build scripts are his. Thank you.
 - **[garado](https://github.com/garado)** wrote
-  [light-topographic](https://github.com/garado/light-topographic). The map style here
-  follows it.
+  [light-topographic](https://github.com/garado/light-topographic), an outdoor maps app
+  for the Light Phone III. LightFog is a fork of it, not a fork of a bare template. The
+  map layer here is his work: `utils/mapStyle.ts` and `utils/mapStyle/`, `utils/geo.ts`,
+  `utils/parseGpx.ts` and `utils/units.ts` all come from light-topographic, and this repo
+  only strips the layer picker out of `buildMapStyle` and adds the fog source. Thank you.
+- **[vandamd](https://github.com/vandamd)** wrote
+  [light-template](https://github.com/vandamd/light-template), the Expo starter that
+  light-topographic itself came from. The component set, the `n()` scaling helper, the
+  `ContentContainer` pattern and the build scripts in `scripts/` are his. Thank you.
 - **[CaviarChen](https://github.com/CaviarChen)** wrote
   [Fog-of-World-Data-Parser](https://github.com/CaviarChen/Fog-of-World-Data-Parser),
-  which documents the Fog of World sync format. The native tile codec in this repo
-  reads that format because of that work. Thank you.
+  which documents the Fog of World sync format. The native tile codec in this repo reads
+  that format because of that work. The repo is archived now and
+  [fog-machine](https://github.com/CaviarChen/fog-machine) succeeds it. Thank you.
 - **[Fog of World](https://fogofworld.app)** is the app this one feeds. LightFog is an
   unofficial companion and the Fog of World team has no part in it.
 - **[MapLibre](https://maplibre.org/)** renders the map. Map data is copyright
@@ -119,7 +123,7 @@ Eight tools for the Light Phone III, all open source, all built in one run.
 | [LightRSS](https://github.com/gi-os/LightRSS) | RSS and Atom reader with images and QR subscribe | light-sdk, fork of [zachattack323/LightRSS](https://github.com/zachattack323/LightRSS) |
 | [LightNYCSubway](https://github.com/gi-os/LightNYCSubway) | Live MTA subway arrivals | light-sdk fork |
 | [chat](https://github.com/gi-os/chat) | iMessage over a self-hosted BlueBubbles server | Fork of [craigeley/chat](https://github.com/craigeley/chat) |
-| **LightFog** (this repo) | Fog of World companion, GPS recorder and fog map | Expo, [vandamd/light-template](https://github.com/vandamd/light-template) |
+| **LightFog** (this repo) | Fog of World companion, GPS recorder and fog map | Fork of [garado/light-topographic](https://github.com/garado/light-topographic) |
 | [LightNonogram](https://github.com/gi-os/LightNonogram) | Picross, plus a generator that only ships solvable puzzles | Kotlin generator, light-sdk tool |
 | [LightSolitaire](https://github.com/gi-os/LightSolitaire) | Klondike, draw one, unlimited redeals | light-sdk |
 
@@ -127,4 +131,15 @@ The Light Phone does not sponsor or endorse any of these.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Unsettled, and worth reading before you copy anything from here.
+
+Neither [light-topographic](https://github.com/garado/light-topographic) nor
+[light-template](https://github.com/vandamd/light-template) carries a LICENSE file, so
+both stay under default copyright. LightFog contains code from both. This repo therefore
+cannot put an open-source license over the whole tree, and it does not try to.
+
+The original work in this repo, which is `modules/recorder/`, `utils/fog/`, the fog
+overlay and the Dropbox flow, is offered under MIT. Everything inherited from the two
+projects above belongs to its authors under their terms. I have asked both authors to
+add a license. Until they do, treat this repository as source-available and ask them
+before you redistribute.
