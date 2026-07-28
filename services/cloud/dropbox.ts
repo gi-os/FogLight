@@ -151,21 +151,23 @@ export async function listGpxFiles(): Promise<DbxEntry[]> {
   return entries.filter((e) => e[".tag"] === "file");
 }
 
-const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-function toBase64(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf);
-  let out = "";
-  for (let i = 0; i < bytes.length; i += 3) {
-    const b0 = bytes[i];
-    const b1 = i + 1 < bytes.length ? bytes[i + 1] : 0;
-    const b2 = i + 2 < bytes.length ? bytes[i + 2] : 0;
-    out += B64[b0 >> 2];
-    out += B64[((b0 & 3) << 4) | (b1 >> 4)];
-    out += i + 1 < bytes.length ? B64[((b1 & 15) << 2) | (b2 >> 6)] : "=";
-    out += i + 2 < bytes.length ? B64[b2 & 63] : "=";
+/**
+ * A valid FoW tile is zlib data — first byte is always 0x78, whose base64
+ * encoding starts with "e". Cheap corruption check.
+ */
+async function isValidFowFile(uri: string): Promise<boolean> {
+  try {
+    const info = await FileSystem.getInfoAsync(uri, { size: true });
+    if (!info.exists || (info.size ?? 0) < 100) return false;
+    const head = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.Base64,
+      position: 0,
+      length: 3,
+    });
+    return head.startsWith("e");
+  } catch {
+    return false;
   }
-  return out;
 }
 
 export function importsDir(): string {
@@ -214,7 +216,29 @@ export async function importNewGpx(): Promise<ImportResult> {
     if (isFow) result.fowTotal++;
     if (!isGpx && !isFow) continue;
     if (isGpx && localGpx.has(entry.name)) continue;
-    if (isFow && localFow.has(entry.name)) continue;
+
+    if (isFow) {
+      const dest = `${fowDir()}/${entry.name}`;
+      // Re-download anything missing or corrupt (heals earlier bad imports).
+      if (localFow.has(entry.name) && (await isValidFowFile(dest))) continue;
+      // Binary-safe: straight to disk. Dropbox content endpoints accept GET
+      // with arg/authorization as URL parameters.
+      const url =
+        "https://content.dropboxapi.com/2/files/download" +
+        `?arg=${encodeURIComponent(JSON.stringify({ path: entry.path_lower }))}` +
+        `&authorization=${encodeURIComponent(`Bearer ${token}`)}`;
+      try {
+        const dl = await FileSystem.downloadAsync(url, dest);
+        if (dl.status === 200 && (await isValidFowFile(dest))) {
+          result.fowAdded++;
+        } else {
+          await FileSystem.deleteAsync(dest, { idempotent: true });
+        }
+      } catch {
+        await FileSystem.deleteAsync(dest, { idempotent: true }).catch(() => undefined);
+      }
+      continue;
+    }
 
     const res = await fetch("https://content.dropboxapi.com/2/files/download", {
       method: "POST",
@@ -224,19 +248,11 @@ export async function importNewGpx(): Promise<ImportResult> {
       },
     });
     if (!res.ok) continue;
-    if (isGpx) {
-      await FileSystem.writeAsStringAsync(
-        `${importsDir()}/${entry.name}`,
-        await res.text()
-      );
-      result.gpxAdded++;
-    } else {
-      const b64 = toBase64(await res.arrayBuffer());
-      await FileSystem.writeAsStringAsync(`${fowDir()}/${entry.name}`, b64, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      result.fowAdded++;
-    }
+    await FileSystem.writeAsStringAsync(
+      `${importsDir()}/${entry.name}`,
+      await res.text()
+    );
+    result.gpxAdded++;
   }
   return result;
 }
