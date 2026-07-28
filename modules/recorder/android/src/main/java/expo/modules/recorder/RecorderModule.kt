@@ -23,12 +23,14 @@ class RecorderModule : Module() {
       } else {
         context.startService(intent)
       }
+      Unit
     }
 
     Function("stop") {
       val context = appContext.reactContext ?: return@Function
       prefs(context).edit().putBoolean(KEY_RUNNING, false).apply()
       context.stopService(Intent(context, RecorderService::class.java))
+      Unit
     }
 
     // User intent (prefs), not service liveness — the UI's source of truth.
