@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system/legacy";
 import { Linking } from "react-native";
+import { fowValidate } from "recorder";
 import { decodeTileFilename } from "@/utils/fog/fowMath";
 
 /**
@@ -152,19 +153,15 @@ export async function listGpxFiles(): Promise<DbxEntry[]> {
 }
 
 /**
- * A valid FoW tile is zlib data — first byte is always 0x78, whose base64
- * encoding starts with "e". Cheap corruption check.
+ * Real validation: hand the file to the native codec and see if it actually
+ * inflates and parses. (A cheap zlib magic-byte check is not enough — UTF-8
+ * mangling preserves ASCII bytes like 0x78, so corrupt files can pass it.)
  */
 async function isValidFowFile(uri: string): Promise<boolean> {
   try {
     const info = await FileSystem.getInfoAsync(uri, { size: true });
     if (!info.exists || (info.size ?? 0) < 100) return false;
-    const head = await FileSystem.readAsStringAsync(uri, {
-      encoding: FileSystem.EncodingType.Base64,
-      position: 0,
-      length: 3,
-    });
-    return head.startsWith("e");
+    return await fowValidate(uri.replace("file://", ""));
   } catch {
     return false;
   }

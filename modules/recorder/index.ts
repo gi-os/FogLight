@@ -48,3 +48,8 @@ export async function fowRenderOverview(
 ): Promise<string | null> {
   return (await RecorderModule?.fowRenderOverview(dirPath, sizePx, color)) ?? null;
 }
+
+/** True if the file inflates and parses as a Fog of World tile. */
+export async function fowValidate(path: string): Promise<boolean> {
+  return (await RecorderModule?.fowValidate(path)) ?? false;
+}
