@@ -39,10 +39,11 @@ const HIRES_ZOOM = 12.5;
 // Crossfade: overview fades out z6->8 while detail tiles fade in z6->7.5
 const OVERVIEW_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 1, 8, 0] as const;
 const TILE_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 0, 7.5, 1] as const;
-const FILL_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 0, 7.5, 0.85] as const;
+const FILL_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 0, 7.5, 0.78] as const;
 // ARGB fog colors (passed to the native rasterizer) — fog covers UNexplored.
-const FOG_DARK = 0xd9000000; // black @ ~85% over the dark map
-const FOG_LIGHT = 0xd9ffffff; // white @ ~85% over the light map
+// White clouds over the dark map make explored areas read as dark clearings.
+const FOG_DARK = 0xc8eaeaea; // white clouds @ ~78% over the dark map
+const FOG_LIGHT = 0xc89aa0a6; // gray clouds @ ~78% over the light map
 
 export default function MapScreen() {
   const { invertColors } = useInvertColors();
@@ -276,7 +277,7 @@ export default function MapScreen() {
             <FillLayer
               id="fog-fill-layer"
               style={{
-                fillColor: invertColors ? "rgb(255,255,255)" : "rgb(0,0,0)",
+                fillColor: invertColors ? "rgb(154,160,166)" : "rgb(234,234,234)",
                 fillOpacity: FILL_OPACITY as unknown as number,
                 fillAntialias: false,
               }}
@@ -330,10 +331,26 @@ export default function MapScreen() {
             <CircleLayer
               id="trail-gap-rings"
               style={{
-                circleRadius: 4,
+                circleRadius: [
+                  "interpolate",
+                  ["exponential", 2],
+                  ["zoom"],
+                  10,
+                  2,
+                  16,
+                  12,
+                ] as unknown as number,
                 circleColor: "rgba(0,0,0,0)",
                 circleStrokeColor: trailColor(invertColors),
-                circleStrokeWidth: 2,
+                circleStrokeWidth: [
+                  "interpolate",
+                  ["linear"],
+                  ["zoom"],
+                  10,
+                  1.5,
+                  16,
+                  3,
+                ] as unknown as number,
               }}
             />
           </ShapeSource>
