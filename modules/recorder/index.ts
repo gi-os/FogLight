@@ -58,3 +58,8 @@ export async function fowValidate(path: string): Promise<boolean> {
 export async function fowInspect(path: string): Promise<string> {
   return (await RecorderModule?.fowInspect(path)) ?? "native module missing";
 }
+
+/** Toggle LightOS forced grayscale (needs WRITE_SECURE_SETTINGS via adb). */
+export function setGrayscale(enabled: boolean): void {
+  RecorderModule?.setGrayscale(enabled);
+}

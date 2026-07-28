@@ -49,6 +49,26 @@ class RecorderModule : Module() {
       tracksDir(context).absolutePath
     }
 
+    // Flip LightOS's forced-grayscale (accessibility daltonizer) while the
+    // map is open. Requires: adb shell pm grant <pkg> android.permission.WRITE_SECURE_SETTINGS
+    Function("setGrayscale") { enabled: Boolean ->
+      val context = appContext.reactContext ?: return@Function null
+      try {
+        if (enabled) {
+          android.provider.Settings.Secure.putInt(
+            context.contentResolver, "accessibility_display_daltonizer_enabled", 1)
+          android.provider.Settings.Secure.putInt(
+            context.contentResolver, "accessibility_display_daltonizer", 0)
+        } else {
+          android.provider.Settings.Secure.putInt(
+            context.contentResolver, "accessibility_display_daltonizer_enabled", 0)
+        }
+      } catch (_: SecurityException) {
+        // permission not granted; silently ignore
+      }
+      null
+    }
+
     AsyncFunction("fowInspect") { path: String ->
       FowCodec.inspect(path)
     }

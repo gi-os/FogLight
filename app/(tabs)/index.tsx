@@ -1,5 +1,5 @@
 import Geolocation from "@react-native-community/geolocation";
-import { fowRenderOverview, fowRenderTile } from "@/modules/recorder";
+import { fowRenderOverview, fowRenderTile, setGrayscale } from "@/modules/recorder";
 import {
   Camera,
   type CameraRef,
@@ -154,6 +154,7 @@ export default function MapScreen() {
       pollFog();
 
       healRecording();
+      setGrayscale(false); // color while the map is open (no-op if not granted)
 
       (async () => {
         try {
@@ -205,6 +206,7 @@ export default function MapScreen() {
 
       return () => {
         cancelled = true;
+        setGrayscale(true); // restore LightOS grayscale when leaving the map
         if (watchId != null) Geolocation.clearWatch(watchId);
         if (pollId != null) clearInterval(pollId);
         clearInterval(fogPollId);
