@@ -286,61 +286,11 @@ object FowCodec {
       // Boost sparse coverage so thin travel still clears visible fog.
       frac[i] = ((visited[i].toDouble() * 24.0 * 255.0) / cellsPerPx).toInt().coerceAtMost(255)
     }
-    val bmp: Bitmap
-    when (style) {
-      STYLE_PIXEL, STYLE_PIXEL2X -> {
-        // Binary mask: a pixel clears once a quarter of its cells are visited.
-        for (i in frac.indices) frac[i] = if (frac[i] * 4 >= 255) 255 else 0
-        if (style == STYLE_PIXEL2X) {
-          val doubled = scale2x(frac, sizePx, sizePx)
-          bmp = Bitmap.createBitmap(sizePx * 2, sizePx * 2, Bitmap.Config.ARGB_8888)
-          bmp.setPixels(colorize(doubled, color), 0, sizePx * 2, 0, 0, sizePx * 2, sizePx * 2)
-        } else {
-          bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-          bmp.setPixels(colorize(frac, color), 0, sizePx, 0, 0, sizePx, sizePx)
-        }
-      }
-      else -> {
-        blurGrid(frac, sizePx, sizePx, radius = 1)
-        bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-        bmp.setPixels(colorize(frac, color), 0, sizePx, 0, 0, sizePx, sizePx)
-      }
-    }
+    blurGrid(frac, sizePx, sizePx, radius = 1)
+    val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    bmp.setPixels(colorize(frac, color), 0, sizePx, 0, 0, sizePx, sizePx)
     FileOutputStream(out).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     bmp.recycle()
     return out.absolutePath
-  }
-
-  const val STYLE_SMOOTH = 0
-  const val STYLE_PIXEL = 1
-  const val STYLE_PIXEL2X = 2
-
-  /**
-   * Scale2x / EPX — the classic pixel-art upscaler (same family as emulator
-   * filters): doubles resolution, rounding staircase edges without blur.
-   */
-  private fun scale2x(m: IntArray, w: Int, h: Int): IntArray {
-    val out = IntArray(w * h * 4)
-    val w2 = w * 2
-    for (y in 0 until h) {
-      for (x in 0 until w) {
-        val p = m[y * w + x]
-        val a = if (y > 0) m[(y - 1) * w + x] else p       // up
-        val b = if (x < w - 1) m[y * w + x + 1] else p     // right
-        val c = if (x > 0) m[y * w + x - 1] else p         // left
-        val d = if (y < h - 1) m[(y + 1) * w + x] else p   // down
-        var e0 = p; var e1 = p; var e2 = p; var e3 = p
-        if (c == a && c != d && a != b) e0 = a
-        if (a == b && a != c && b != d) e1 = b
-        if (d == c && d != b && c != a) e2 = c
-        if (b == d && b != a && d != c) e3 = b
-        val oy = y * 2 * w2 + x * 2
-        out[oy] = e0
-        out[oy + 1] = e1
-        out[oy + w2] = e2
-        out[oy + w2 + 1] = e3
-      }
-    }
-    return out
   }
 }
