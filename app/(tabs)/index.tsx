@@ -39,11 +39,12 @@ const HIRES_ZOOM = 12.5;
 // Crossfade: overview fades out z6->8 while detail tiles fade in z6->7.5
 const OVERVIEW_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 1, 8, 0] as const;
 const TILE_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 0, 7.5, 1] as const;
-const FILL_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 0, 7.5, 0.78] as const;
+const FILL_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 0, 7.5, 0.88] as const;
 // ARGB fog colors (passed to the native rasterizer) — fog covers UNexplored.
-// White clouds over the dark map make explored areas read as dark clearings.
-const FOG_DARK = 0xc8eaeaea; // white clouds @ ~78% over the dark map
-const FOG_LIGHT = 0xc89aa0a6; // gray clouds @ ~78% over the light map
+// Dark fog keeps the screen mostly black (LightOS); explored areas are pure
+// map with a glowing rim added natively along clearing boundaries.
+const FOG_DARK = 0xe0000000; // black fog @ ~88% over the dark map
+const FOG_LIGHT = 0xe0f2f2f2; // pale fog @ ~88% over the light map
 
 export default function MapScreen() {
   const { invertColors } = useInvertColors();
@@ -277,7 +278,7 @@ export default function MapScreen() {
             <FillLayer
               id="fog-fill-layer"
               style={{
-                fillColor: invertColors ? "rgb(154,160,166)" : "rgb(234,234,234)",
+                fillColor: invertColors ? "rgb(242,242,242)" : "rgb(0,0,0)",
                 fillOpacity: FILL_OPACITY as unknown as number,
                 fillAntialias: false,
               }}

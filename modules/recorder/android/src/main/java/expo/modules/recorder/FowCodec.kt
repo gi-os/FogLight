@@ -127,12 +127,10 @@ object FowCodec {
     val cellsPerPx = BITMAP_WIDTH / pxPerBlock
     if (cellsPerPx <= 0) return null
     val cellsPerRegion = cellsPerPx * cellsPerPx
-    val fogA = (color ushr 24) and 0xFF
-    val rgb = color and 0x00FFFFFF
 
-    // Inverted: start fully fogged, thin the fog by fraction of visited cells.
-    val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-    bmp.eraseColor(color)
+    // Visited-coverage grid (0..255 per pixel), blurred, then colorized as
+    // dark fog with a glowing rim along clearing boundaries.
+    val frac = IntArray(sizePx * sizePx)
     for ((pos, bitmap) in blocks) {
       val baseX = pos.first * pxPerBlock
       val baseY = pos.second * pxPerBlock
@@ -146,33 +144,26 @@ object FowCodec {
             }
           }
           if (cnt > 0) {
-            val a = (fogA * (cellsPerRegion - cnt)) / cellsPerRegion
-            bmp.setPixel(baseX + px, baseY + py, (a shl 24) or rgb)
+            frac[(baseY + py) * sizePx + baseX + px] = (cnt * 255) / cellsPerRegion
           }
         }
       }
     }
-    featherAlpha(bmp, radius = (sizePx / 512).coerceIn(1, 4), rgb = rgb)
+    blurGrid(frac, sizePx, sizePx, radius = (sizePx / 512).coerceIn(1, 4))
+    val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    bmp.setPixels(colorize(frac, color), 0, sizePx, 0, 0, sizePx, sizePx)
     FileOutputStream(out).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     bmp.recycle()
     return out.absolutePath
   }
 
-  /**
-   * Two-pass box blur on the alpha channel only (RGB held constant) —
-   * feathers explored-area edges into soft fog without dark fringes.
-   */
-  private fun featherAlpha(bmp: Bitmap, radius: Int, rgb: Int) {
+  private const val RIM_ALPHA = 80
+
+  /** Two-pass box blur over an int grid (feathering for coverage values). */
+  private fun blurGrid(a: IntArray, w: Int, h: Int, radius: Int) {
     if (radius <= 0) return
-    val w = bmp.width
-    val h = bmp.height
-    val px = IntArray(w * h)
-    bmp.getPixels(px, 0, w, 0, 0, w, h)
-    val a = IntArray(w * h)
-    for (i in px.indices) a[i] = px[i] ushr 24
     val tmp = IntArray(w * h)
     val div = radius * 2 + 1
-    // horizontal
     for (y in 0 until h) {
       val row = y * w
       var sum = 0
@@ -183,17 +174,45 @@ object FowCodec {
           a[row + (x - radius).coerceAtLeast(0)]
       }
     }
-    // vertical
     for (x in 0 until w) {
       var sum = 0
       for (y in -radius..radius) sum += tmp[y.coerceIn(0, h - 1) * w + x]
       for (y in 0 until h) {
-        px[y * w + x] = ((sum / div) shl 24) or rgb
+        a[y * w + x] = sum / div
         sum += tmp[(y + radius + 1).coerceAtMost(h - 1) * w + x] -
           tmp[(y - radius).coerceAtLeast(0) * w + x]
       }
     }
-    bmp.setPixels(px, 0, w, 0, 0, w, h)
+  }
+
+  /**
+   * Coverage (0..255) -> ARGB: heavy fog where unexplored, fully clear where
+   * explored, with a soft glowing rim along the boundary so clearings pop on
+   * a mostly-dark map.
+   */
+  private fun colorize(frac: IntArray, fog: Int): IntArray {
+    val fogA = (fog ushr 24) and 0xFF
+    val fr = (fog shr 16) and 0xFF
+    val fg = (fog shr 8) and 0xFF
+    val fb = fog and 0xFF
+    val rimC = if ((fr + fg + fb) / 3 < 128) 255 else 0 // white rim on dark fog
+    val out = IntArray(frac.size)
+    for (i in out.indices) {
+      val f = frac[i]
+      if (f == 0) {
+        out[i] = (fogA shl 24) or (fr shl 16) or (fg shl 8) or fb
+        continue
+      }
+      val rim = (4 * f * (255 - f)) / 255 // 0..255, peaks at the boundary
+      val alpha = ((fogA * (255 - f)) / 255 + (RIM_ALPHA * rim) / 255)
+        .coerceAtMost(255)
+      val t = (rim * 6 / 5).coerceAtMost(255) // whitening toward the rim color
+      val r = fr + ((rimC - fr) * t) / 255
+      val g = fg + ((rimC - fg) * t) / 255
+      val b = fb + ((rimC - fb) * t) / 255
+      out[i] = (alpha shl 24) or (r shl 16) or (g shl 8) or b
+    }
+    return out
   }
 
   /**
@@ -214,8 +233,6 @@ object FowCodec {
     val blocksPerPx = worldBlocks / sizePx
     if (blocksPerPx < 1) return null
     val cellsPerPx = blocksPerPx * blocksPerPx * BITMAP_WIDTH * BITMAP_WIDTH
-    val fogA = (color ushr 24) and 0xFF
-    val rgb = color and 0x00FFFFFF
 
     val visited = IntArray(sizePx * sizePx)
     for (file in files) {
@@ -234,17 +251,14 @@ object FowCodec {
       }
     }
 
-    val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-    val px = IntArray(sizePx * sizePx)
-    for (i in px.indices) {
-      val v = visited[i]
+    val frac = IntArray(sizePx * sizePx)
+    for (i in frac.indices) {
       // Boost sparse coverage so thin travel still clears visible fog.
-      val frac = (v.toDouble() * 24.0 / cellsPerPx).coerceAtMost(1.0)
-      val a = (fogA * (1.0 - frac)).toInt()
-      px[i] = (a shl 24) or rgb
+      frac[i] = ((visited[i].toDouble() * 24.0 * 255.0) / cellsPerPx).toInt().coerceAtMost(255)
     }
-    bmp.setPixels(px, 0, sizePx, 0, 0, sizePx, sizePx)
-    featherAlpha(bmp, radius = 2, rgb = rgb)
+    blurGrid(frac, sizePx, sizePx, radius = 2)
+    val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    bmp.setPixels(colorize(frac, color), 0, sizePx, 0, 0, sizePx, sizePx)
     FileOutputStream(out).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     bmp.recycle()
     return out.absolutePath
