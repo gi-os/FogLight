@@ -12,7 +12,6 @@ export default function TabLayout() {
   return (
     <Tabs
       backBehavior="none"
-      sceneContainerStyle={{ backgroundColor: "black" }}
       screenOptions={{ animation: "none" }}
       tabBar={(props) => {
         const activeScreenName = props.state.routes[props.state.index].name;

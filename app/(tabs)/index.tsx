@@ -22,6 +22,7 @@ import { fowDirPath, listImported, readImported } from "@/services/cloud/dropbox
 import { healRecording } from "@/services/recordingState";
 import { buildTrail, readDay, todayKey, type Trail } from "@/services/trackStore";
 import {
+  type Corners,
   type FowTile,
   scanFowTiles,
   tilesInBounds,
@@ -57,7 +58,7 @@ export default function MapScreen() {
   const [overviewUri, setOverviewUri] = useState<string | null>(null);
   const overviewUriRef = useRef<string | null>(null);
   const [tileImages, setTileImages] = useState<
-    { key: string; uri: string; corners: [number, number][] }[]
+    { key: string; uri: string; corners: Corners }[]
   >([]);
   const renderedRef = useRef<Map<string, string>>(new Map());
   const [fogDebug, setFogDebug] = useState("");
@@ -120,10 +121,13 @@ export default function MapScreen() {
             return;
           }
           const sizePx = zoom >= HIRES_ZOOM ? 2048 : 1024;
-          const [ne, sw] = await map.getVisibleBounds();
+          const [ne, sw] = (await map.getVisibleBounds()) as [
+            [number, number],
+            [number, number],
+          ];
           const needed = tilesInBounds(fowTilesRef.current, ne, sw, 16);
           let failed = 0;
-          const next: { key: string; uri: string; corners: [number, number][] }[] = [];
+          const next: { key: string; uri: string; corners: Corners }[] = [];
           for (const tile of needed) {
             const key = `fow-${tile.id}-${sizePx}`;
             let uri = renderedRef.current.get(key);
@@ -218,7 +222,7 @@ export default function MapScreen() {
   // everything without tile data once the overview has faded out.
   const fogFill = useMemo(() => {
     if (fowTiles.length === 0) return null;
-    const world: [number, number][] = [
+    const world: GeoJSON.Position[] = [
       [-180, -85.0511],
       [180, -85.0511],
       [180, 85.0511],
@@ -227,7 +231,7 @@ export default function MapScreen() {
     ];
     const holes = tileImages.map((img) => {
       const [tl, tr, br, bl] = img.corners;
-      return [tl, bl, br, tr, tl] as [number, number][];
+      return [tl, bl, br, tr, tl] as GeoJSON.Position[];
     });
     return {
       type: "Feature" as const,

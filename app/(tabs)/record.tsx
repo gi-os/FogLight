@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from "react";
 import { PermissionsAndroid } from "react-native";
 import { startRecording, stopRecording } from "@/modules/recorder";
 import ContentContainer from "@/components/ContentContainer";
-import { OptionsSelector } from "@/components/OptionsSelector";
 import { StyledButton } from "@/components/StyledButton";
 import { StyledText } from "@/components/StyledText";
 import { usePersistedState } from "@/hooks/usePersistedState";
@@ -64,11 +63,14 @@ export default function RecordScreen() {
       <StyledText style={{ fontSize: n(14), marginTop: n(16) }}>
         GPS Interval
       </StyledText>
-      <OptionsSelector
-        onSelect={(value: string) => setIntervalPref(value)}
-        options={INTERVAL_OPTIONS.map((o) => ({ label: o, value: o }))}
-        selectedValue={interval}
-      />
+      {INTERVAL_OPTIONS.map((o) => (
+        <StyledButton
+          key={o}
+          onPress={() => setIntervalPref(o)}
+          selected={interval === o}
+          text={o}
+        />
+      ))}
       <StyledText style={{ fontSize: n(14), marginTop: n(16) }}>
         {recordOn
           ? "Recording — leave it running, the fog clears itself."

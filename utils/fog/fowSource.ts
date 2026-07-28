@@ -2,6 +2,13 @@ import * as FileSystem from "expo-file-system/legacy";
 import { fowDir, fowDirPath } from "@/services/cloud/dropbox";
 import { decodeTileFilename, MAP_WIDTH, tileBounds } from "./fowMath";
 
+export type Corners = [
+  GeoJSON.Position,
+  GeoJSON.Position,
+  GeoJSON.Position,
+  GeoJSON.Position,
+];
+
 export type FowTile = {
   id: number;
   x: number;
@@ -9,7 +16,7 @@ export type FowTile = {
   /** native fs path for the Kotlin codec */
   path: string;
   /** [[w,n],[e,n],[e,s],[w,s]] corners for ImageSource */
-  corners: [number, number][];
+  corners: Corners;
 };
 
 export async function scanFowTiles(): Promise<FowTile[]> {
@@ -32,7 +39,7 @@ export async function scanFowTiles(): Promise<FowTile[]> {
           [e, n],
           [e, s],
           [w, s],
-        ],
+        ] as Corners,
       });
     }
     return tiles;
@@ -65,7 +72,7 @@ export function tilesInBounds(
 }
 
 /** World corners for the overview image (web-mercator extent). */
-export const WORLD_CORNERS: [number, number][] = [
+export const WORLD_CORNERS: Corners = [
   [-180, 85.0511],
   [180, 85.0511],
   [180, -85.0511],

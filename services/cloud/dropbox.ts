@@ -159,7 +159,7 @@ export async function listGpxFiles(): Promise<DbxEntry[]> {
  */
 async function isValidFowFile(uri: string): Promise<boolean> {
   try {
-    const info = await FileSystem.getInfoAsync(uri, { size: true });
+    const info = await FileSystem.getInfoAsync(uri);
     if (!info.exists || (info.size ?? 0) < 100) return false;
     return await fowValidate(uri.replace("file://", ""));
   } catch {
@@ -251,9 +251,7 @@ export async function importNewGpx(): Promise<ImportResult> {
           result.fowAdded++;
         } else {
           result.fowFailed++;
-          const info = await FileSystem.getInfoAsync(dest, { size: true }).catch(
-            () => null
-          );
+          const info = await FileSystem.getInfoAsync(dest).catch(() => null);
           if (!result.firstError) {
             result.firstError = `native decode rejected fresh download (${
               info && info.exists ? (info.size ?? "?") : "?"
