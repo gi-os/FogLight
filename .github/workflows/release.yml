@@ -56,6 +56,17 @@ jobs:
       - name: Prebuild android project
         run: bunx expo prebuild --platform android --no-install
 
+      - name: Autolinking forensics
+        run: |
+          echo "--- settings.gradle expoAutolinking lines ---"
+          grep -n "expoAutolinking" android/settings.gradle || true
+          echo "--- modules dir ---"
+          ls modules/recorder || true
+          echo "--- resolve from repo root ---"
+          node node_modules/expo-modules-autolinking/bin/expo-modules-autolinking.js resolve -p android -j 2>/dev/null | head -c 400 || true
+          echo ""
+          node node_modules/expo-modules-autolinking/bin/expo-modules-autolinking.js resolve -p android -j 2>/dev/null | grep -o '"packageName":"[^"]*"' || true
+
       - name: Build release APK
         working-directory: android
         run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
