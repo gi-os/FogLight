@@ -47,9 +47,19 @@ const HIRES_ZOOM = 12.5;
 const OVERVIEW_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 1, 8, 0] as const;
 const TILE_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 0, 7.5, 1] as const;
 
-// Fog RGB bases — alpha comes from the persisted Fog Density setting.
-const FOG_RGB_DARK = 0x0a0a0a;
-const FOG_RGB_LIGHT = 0xf0f0f0;
+// Fog RGB choices — alpha comes from the persisted Fog Density setting.
+const FOG_RGBS: Record<string, number> = {
+  black: 0x0a0a0a,
+  darkgrey: 0x3a3a3a,
+  lightgrey: 0xbbbbbb,
+  white: 0xf5f5f5,
+};
+const FOG_CSS: Record<string, string> = {
+  black: "rgb(10,10,10)",
+  darkgrey: "rgb(58,58,58)",
+  lightgrey: "rgb(187,187,187)",
+  white: "rgb(245,245,245)",
+};
 const DEFAULT_DENSITY = 78;
 
 export default function MapScreen() {
@@ -72,6 +82,7 @@ export default function MapScreen() {
   const [debugEnabled, setDebugEnabled] = useState(false);
   const [fogStyle, setFogStyle] = useState<FogStyle>(0);
   const [lightMap, setLightMap] = useState(false);
+  const [fogColorName, setFogColorName] = useState("black");
   const [initialCam, setInitialCam] = useState<
     { center: [number, number]; zoom: number } | null | undefined
   >(undefined); // undefined = still loading, null = none saved
@@ -81,9 +92,9 @@ export default function MapScreen() {
 
   const fogColor = useMemo(() => {
     const alpha = Math.round((fogDensity / 100) * 255);
-    const rgb = lightBase ? FOG_RGB_LIGHT : FOG_RGB_DARK;
+    const rgb = FOG_RGBS[fogColorName] ?? FOG_RGBS.black;
     return alpha * 0x1000000 + rgb;
-  }, [fogDensity, lightBase]);
+  }, [fogDensity, fogColorName]);
 
   useEffect(() => {
     AsyncStorage.getItem("lastCamera")
@@ -216,6 +227,11 @@ export default function MapScreen() {
             const v = Number(JSON.parse(raw));
             if (Number.isFinite(v)) setFogDensity(v);
           }
+        })
+        .catch(() => undefined);
+      AsyncStorage.getItem("fogColorName")
+        .then((raw) => {
+          if (!cancelled && raw != null) setFogColorName(JSON.parse(raw));
         })
         .catch(() => undefined);
       AsyncStorage.getItem("lightMap")
@@ -375,7 +391,7 @@ export default function MapScreen() {
             <FillLayer
               id="fog-fill-layer"
               style={{
-                fillColor: lightBase ? "rgb(240,240,240)" : "rgb(10,10,10)",
+                fillColor: FOG_CSS[fogColorName] ?? FOG_CSS.black,
                 fillOpacity: fillOpacity as unknown as number,
                 fillAntialias: false,
               }}

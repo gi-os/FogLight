@@ -18,6 +18,13 @@ import {
 } from "@/services/cloud/dropbox";
 import { n } from "@/utils/scaling";
 
+const FOG_COLORS = [
+  { label: "Black", value: "black" },
+  { label: "Dark Grey", value: "darkgrey" },
+  { label: "Light Grey", value: "lightgrey" },
+  { label: "White", value: "white" },
+] as const;
+
 const FOG_STYLES = [
   { label: "Smooth", value: "smooth" },
   { label: "Pixels", value: "pixel" },
@@ -31,6 +38,7 @@ export default function SettingsScreen() {
   const [fogScale2x, setFogScale2x] = usePersistedState("fogScale2x", true);
   const [fogBlur, setFogBlur] = usePersistedState("fogBlur", true);
   const [lightMap, setLightMap] = usePersistedState("lightMap", false);
+  const [fogColorName, setFogColorName] = usePersistedState("fogColorName", "black");
   const [appKey, setAppKeyState] = useState("");
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -81,6 +89,18 @@ export default function SettingsScreen() {
         onChange={setFogDensity}
         value={fogDensity}
       />
+
+      <StyledText style={{ fontSize: n(14), marginTop: n(16) }}>
+        Fog Colour
+      </StyledText>
+      {FOG_COLORS.map((o) => (
+        <StyledButton
+          key={o.value}
+          onPress={() => setFogColorName(o.value as string)}
+          selected={fogColorName === o.value}
+          text={o.label}
+        />
+      ))}
 
       <StyledText style={{ fontSize: n(14), marginTop: n(16) }}>
         Fog Style
