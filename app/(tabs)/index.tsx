@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import Geolocation from "@react-native-community/geolocation";
 import { fowRenderOverview, fowRenderTile, setGrayscale } from "@/modules/recorder";
 import {
@@ -40,11 +41,11 @@ const HIRES_ZOOM = 12.5;
 // Crossfade: overview fades out z6->8 while detail tiles fade in z6->7.5
 const OVERVIEW_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 1, 8, 0] as const;
 const TILE_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 0, 7.5, 1] as const;
-const FILL_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 0, 7.5, 0.78] as const;
-// ARGB fog colors — a desaturating veil: unexplored still shows the map in
-// near-monochrome (structure visible, color crushed); explored is full color.
-const FOG_DARK = 0xc70a0a0a; // dark veil @ ~78% — B+W unexplored
-const FOG_LIGHT = 0xc7f0f0f0; // pale veil @ ~78% on the light theme
+
+// Fog RGB bases — alpha comes from the persisted Fog Density setting.
+const FOG_RGB_DARK = 0x0a0a0a;
+const FOG_RGB_LIGHT = 0xf0f0f0;
+const DEFAULT_DENSITY = 78;
 
 export default function MapScreen() {
   const { invertColors } = useInvertColors();
@@ -62,7 +63,20 @@ export default function MapScreen() {
   >([]);
   const renderedRef = useRef<Map<string, string>>(new Map());
   const [fogDebug, setFogDebug] = useState("");
+  const [fogDensity, setFogDensity] = useState(DEFAULT_DENSITY);
   const hasCentered = useRef(false);
+
+  const fogColor = useMemo(() => {
+    const alpha = Math.round((fogDensity / 100) * 255);
+    const rgb = invertColors ? FOG_RGB_LIGHT : FOG_RGB_DARK;
+    return alpha * 0x1000000 + rgb;
+  }, [fogDensity, invertColors]);
+
+  const fillOpacity = useMemo(
+    () =>
+      ["interpolate", ["linear"], ["zoom"], 6, 0, 7.5, fogDensity / 100] as const,
+    [fogDensity]
+  );
 
   const mapStyle = useMemo(() => buildMapStyle(invertColors), [invertColors]);
 
@@ -102,7 +116,6 @@ export default function MapScreen() {
       loadTrail();
       pollId = setInterval(loadTrail, TRAIL_POLL_MS);
 
-      const color = invertColors ? FOG_LIGHT : FOG_DARK;
       const pollFog = async () => {
         const map = mapRef.current;
         if (!map) return;
@@ -129,10 +142,10 @@ export default function MapScreen() {
           let failed = 0;
           const next: { key: string; uri: string; corners: Corners }[] = [];
           for (const tile of needed) {
-            const key = `fow-${tile.id}-${sizePx}`;
+            const key = `fow-${tile.id}-${sizePx}-${fogColor}`;
             let uri = renderedRef.current.get(key);
             if (!uri) {
-              const rendered = await fowRenderTile(tile.path, sizePx, color);
+              const rendered = await fowRenderTile(tile.path, sizePx, fogColor);
               if (!rendered) {
                 failed++;
                 continue;
@@ -160,6 +173,15 @@ export default function MapScreen() {
       healRecording();
       setGrayscale(false); // color while the map is open (no-op if not granted)
 
+      AsyncStorage.getItem("fogDensity")
+        .then((raw) => {
+          if (raw != null && !cancelled) {
+            const v = Number(JSON.parse(raw));
+            if (Number.isFinite(v)) setFogDensity(v);
+          }
+        })
+        .catch(() => undefined);
+
       (async () => {
         try {
           const tiles = await scanFowTiles();
@@ -167,10 +189,9 @@ export default function MapScreen() {
           fowTilesRef.current = tiles;
           setFowTiles(tiles);
           if (tiles.length > 0) {
-            const color = invertColors ? FOG_LIGHT : FOG_DARK;
-            let uri = await fowRenderOverview(fowDirPath(), OVERVIEW_PX, color);
+            let uri = await fowRenderOverview(fowDirPath(), OVERVIEW_PX, fogColor);
             if (!uri) {
-              uri = await fowRenderOverview(fowDirPath(), OVERVIEW_PX / 2, color);
+              uri = await fowRenderOverview(fowDirPath(), OVERVIEW_PX / 2, fogColor);
             }
             if (cancelled) return;
             if (uri) {
@@ -215,7 +236,7 @@ export default function MapScreen() {
         if (pollId != null) clearInterval(pollId);
         clearInterval(fogPollId);
       };
-    }, [invertColors])
+    }, [invertColors, fogColor])
   );
 
   // World polygon with holes where hi-res fog tiles are rendered — fogs
@@ -284,7 +305,7 @@ export default function MapScreen() {
               id="fog-fill-layer"
               style={{
                 fillColor: invertColors ? "rgb(240,240,240)" : "rgb(10,10,10)",
-                fillOpacity: FILL_OPACITY as unknown as number,
+                fillOpacity: fillOpacity as unknown as number,
                 fillAntialias: false,
               }}
             />

@@ -2,11 +2,13 @@ import Constants from "expo-constants";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import ContentContainer from "@/components/ContentContainer";
+import { SliderRow } from "@/components/SliderRow";
 import { StyledButton } from "@/components/StyledButton";
 import { StyledText } from "@/components/StyledText";
 import { TextInput } from "@/components/TextInput";
 import { ToggleSwitch } from "@/components/ToggleSwitch";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
+import { usePersistedState } from "@/hooks/usePersistedState";
 import {
   disconnect,
   getAppKey,
@@ -18,6 +20,7 @@ import { n } from "@/utils/scaling";
 
 export default function SettingsScreen() {
   const { invertColors, setInvertColors } = useInvertColors();
+  const [fogDensity, setFogDensity] = usePersistedState("fogDensity", 78);
   const [appKey, setAppKeyState] = useState("");
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -52,6 +55,15 @@ export default function SettingsScreen() {
         label="Invert Colours"
         onValueChange={setInvertColors}
         value={invertColors}
+      />
+
+      <SliderRow
+        format={(v) => `${v}%`}
+        label="Fog Density"
+        max={95}
+        min={30}
+        onChange={setFogDensity}
+        value={fogDensity}
       />
 
       <StyledText style={{ fontSize: n(16), marginTop: n(24), marginBottom: n(8) }}>
