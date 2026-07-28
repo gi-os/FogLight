@@ -21,6 +21,7 @@ import { n } from "@/utils/scaling";
 export default function SettingsScreen() {
   const { invertColors, setInvertColors } = useInvertColors();
   const [fogDensity, setFogDensity] = usePersistedState("fogDensity", 78);
+  const [fogDebugOn, setFogDebugOn] = usePersistedState("fogDebugEnabled", false);
   const [appKey, setAppKeyState] = useState("");
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -64,6 +65,12 @@ export default function SettingsScreen() {
         min={30}
         onChange={setFogDensity}
         value={fogDensity}
+      />
+
+      <ToggleSwitch
+        label="Fog Debug Overlay"
+        onValueChange={setFogDebugOn}
+        value={fogDebugOn}
       />
 
       <StyledText style={{ fontSize: n(16), marginTop: n(24), marginBottom: n(8) }}>

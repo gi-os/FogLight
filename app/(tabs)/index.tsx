@@ -64,6 +64,7 @@ export default function MapScreen() {
   const renderedRef = useRef<Map<string, string>>(new Map());
   const [fogDebug, setFogDebug] = useState("");
   const [fogDensity, setFogDensity] = useState(DEFAULT_DENSITY);
+  const [debugEnabled, setDebugEnabled] = useState(false);
   const hasCentered = useRef(false);
 
   const fogColor = useMemo(() => {
@@ -179,6 +180,11 @@ export default function MapScreen() {
             const v = Number(JSON.parse(raw));
             if (Number.isFinite(v)) setFogDensity(v);
           }
+        })
+        .catch(() => undefined);
+      AsyncStorage.getItem("fogDebugEnabled")
+        .then((raw) => {
+          if (!cancelled) setDebugEnabled(raw != null && JSON.parse(raw) === true);
         })
         .catch(() => undefined);
 
@@ -406,7 +412,7 @@ export default function MapScreen() {
       <HapticPressable onPress={locate} style={styles.locateButton}>
         <StyledText style={styles.locateLabel}>LOCATE</StyledText>
       </HapticPressable>
-      {fogDebug !== "" && (
+      {debugEnabled && fogDebug !== "" && (
         <View style={styles.debugBox}>
           <StyledText style={styles.debugText}>{fogDebug}</StyledText>
         </View>
