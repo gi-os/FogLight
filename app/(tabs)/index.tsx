@@ -196,12 +196,14 @@ export default function MapScreen() {
       Promise.all([
         AsyncStorage.getItem("fogStyle"),
         AsyncStorage.getItem("fogScale2x"),
+        AsyncStorage.getItem("fogBlur"),
       ])
-        .then(([styleRaw, s2xRaw]) => {
+        .then(([styleRaw, s2xRaw, blurRaw]) => {
           if (cancelled) return;
           const style = styleRaw != null ? JSON.parse(styleRaw) : "smooth";
           const s2x = s2xRaw != null ? JSON.parse(s2xRaw) === true : true;
-          setFogStyle(style === "pixel" ? (s2x ? 2 : 1) : 0);
+          const blur = blurRaw != null ? JSON.parse(blurRaw) === true : true;
+          setFogStyle(style === "pixel" ? (s2x ? 2 : 1) : blur ? 0 : 3);
         })
         .catch(() => undefined);
 
@@ -346,7 +348,9 @@ export default function MapScreen() {
               style={{
                 rasterOpacity: TILE_OPACITY as unknown as number,
                 rasterFadeDuration: 300,
-                ...(fogStyle !== 0 ? { rasterResampling: "nearest" as const } : {}),
+                ...(fogStyle === 1 || fogStyle === 2
+                  ? { rasterResampling: "nearest" as const }
+                  : {}),
               }}
             />
           </ImageSource>

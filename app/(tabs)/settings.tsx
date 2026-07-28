@@ -29,6 +29,7 @@ export default function SettingsScreen() {
   const [fogDebugOn, setFogDebugOn] = usePersistedState("fogDebugEnabled", false);
   const [fogStyle, setFogStyle] = usePersistedState("fogStyle", "smooth");
   const [fogScale2x, setFogScale2x] = usePersistedState("fogScale2x", true);
+  const [fogBlur, setFogBlur] = usePersistedState("fogBlur", true);
   const [appKey, setAppKeyState] = useState("");
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -90,6 +91,13 @@ export default function SettingsScreen() {
           label="Pixel Smoothing (Scale2x)"
           onValueChange={setFogScale2x}
           value={fogScale2x}
+        />
+      )}
+      {fogStyle === "smooth" && (
+        <ToggleSwitch
+          label="Edge Blur"
+          onValueChange={setFogBlur}
+          value={fogBlur}
         />
       )}
 

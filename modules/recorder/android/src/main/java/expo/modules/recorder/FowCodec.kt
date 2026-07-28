@@ -152,8 +152,9 @@ object FowCodec {
     val bmp: Bitmap
     when (style) {
       STYLE_PIXEL, STYLE_PIXEL2X -> {
-        // Binary mask: a pixel clears once a quarter of its cells are visited.
-        for (i in frac.indices) frac[i] = if (frac[i] * 4 >= 255) 255 else 0
+        // Binary mask: any visited cell clears the pixel — thin travel
+        // lines stay bold instead of dropping below a coverage threshold.
+        for (i in frac.indices) frac[i] = if (frac[i] > 0) 255 else 0
         if (style == STYLE_PIXEL2X) {
           val doubled = scale2x(frac, sizePx, sizePx)
           bmp = Bitmap.createBitmap(sizePx * 2, sizePx * 2, Bitmap.Config.ARGB_8888)
@@ -164,7 +165,9 @@ object FowCodec {
         }
       }
       else -> {
-        blurGrid(frac, sizePx, sizePx, radius = 1)
+        if (style != STYLE_SHARP) {
+          blurGrid(frac, sizePx, sizePx, radius = 1)
+        }
         bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
         bmp.setPixels(colorize(frac, color), 0, sizePx, 0, 0, sizePx, sizePx)
       }
@@ -177,6 +180,7 @@ object FowCodec {
   const val STYLE_SMOOTH = 0
   const val STYLE_PIXEL = 1
   const val STYLE_PIXEL2X = 2
+  const val STYLE_SHARP = 3 // fractional coverage, no blur pass
 
   /**
    * Scale2x / EPX — the classic pixel-art upscaler (same family as emulator

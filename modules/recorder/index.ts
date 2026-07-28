@@ -31,8 +31,8 @@ export function tracksDir(): string | null {
   return RecorderModule?.tracksDir() ?? null;
 }
 
-/** Fog styles: 0 smooth, 1 crisp pixels, 2 pixels upscaled with Scale2x. */
-export type FogStyle = 0 | 1 | 2;
+/** Fog styles: 0 smooth, 1 pixels, 2 pixels+Scale2x, 3 smooth without blur. */
+export type FogStyle = 0 | 1 | 2 | 3;
 
 /** Rasterize a Fog of World tile file to a PNG. Returns file path or null. */
 export async function fowRenderTile(
