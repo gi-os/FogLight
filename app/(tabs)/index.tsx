@@ -4,6 +4,7 @@ import {
   Camera,
   type CameraRef,
   CircleLayer,
+  FillLayer,
   ImageSource,
   LineLayer,
   MapView,
@@ -19,7 +20,7 @@ import { StyledText } from "@/components/StyledText";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
 import { fowDirPath, listImported, readImported } from "@/services/cloud/dropbox";
 import { healRecording } from "@/services/recordingState";
-import { readDay, todayKey, toLineString } from "@/services/trackStore";
+import { buildTrail, readDay, todayKey, type Trail } from "@/services/trackStore";
 import {
   type FowTile,
   scanFowTiles,
@@ -32,22 +33,23 @@ import { n } from "@/utils/scaling";
 
 const TRAIL_POLL_MS = 15_000;
 const FOG_POLL_MS = 2_500;
-const OVERVIEW_PX = 4096;
-const TILE_MIN_ZOOM = 6.5;
+const OVERVIEW_PX = 2048;
+const TILE_MIN_ZOOM = 5.5;
 const HIRES_ZOOM = 12.5;
-// Crossfade: overview fades out z7->9 while detail tiles fade in z7->8.5
-const OVERVIEW_OPACITY = ["interpolate", ["linear"], ["zoom"], 7, 0.95, 9, 0] as const;
-const TILE_OPACITY = ["interpolate", ["linear"], ["zoom"], 7, 0, 8.5, 0.95] as const;
-// ARGB as numbers (passed to the native rasterizer)
-const EXPLORED_DARK = 0xb4ffffff; // white @ ~70% on the dark map
-const EXPLORED_LIGHT = 0x59000000; // black @ ~35% on the inverted map
+// Crossfade: overview fades out z6->8 while detail tiles fade in z6->7.5
+const OVERVIEW_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 1, 8, 0] as const;
+const TILE_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 0, 7.5, 1] as const;
+const FILL_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 0, 7.5, 0.85] as const;
+// ARGB fog colors (passed to the native rasterizer) — fog covers UNexplored.
+const FOG_DARK = 0xd9000000; // black @ ~85% over the dark map
+const FOG_LIGHT = 0xd9ffffff; // white @ ~85% over the light map
 
 export default function MapScreen() {
   const { invertColors } = useInvertColors();
   const cameraRef = useRef<CameraRef>(null);
   const mapRef = useRef<MapViewRef>(null);
   const [coords, setCoords] = useState<[number, number] | null>(null);
-  const [trail, setTrail] = useState<ReturnType<typeof toLineString> | null>(null);
+  const [trail, setTrail] = useState<Trail | null>(null);
   const [importedTrails, setImportedTrails] = useState<GeoJSON.FeatureCollection | null>(null);
   const [fowTiles, setFowTiles] = useState<FowTile[]>([]);
   const fowTilesRef = useRef<FowTile[]>([]);
@@ -93,12 +95,12 @@ export default function MapScreen() {
 
       const loadTrail = async () => {
         const points = await readDay(todayKey());
-        if (!cancelled) setTrail(points.length > 1 ? toLineString(points) : null);
+        if (!cancelled) setTrail(points.length > 1 ? buildTrail(points) : null);
       };
       loadTrail();
       pollId = setInterval(loadTrail, TRAIL_POLL_MS);
 
-      const color = invertColors ? EXPLORED_LIGHT : EXPLORED_DARK;
+      const color = invertColors ? FOG_LIGHT : FOG_DARK;
       const pollFog = async () => {
         const map = mapRef.current;
         if (!map) return;
@@ -159,7 +161,7 @@ export default function MapScreen() {
           fowTilesRef.current = tiles;
           setFowTiles(tiles);
           if (tiles.length > 0) {
-            const color = invertColors ? EXPLORED_LIGHT : EXPLORED_DARK;
+            const color = invertColors ? FOG_LIGHT : FOG_DARK;
             let uri = await fowRenderOverview(fowDirPath(), OVERVIEW_PX, color);
             if (!uri) {
               uri = await fowRenderOverview(fowDirPath(), OVERVIEW_PX / 2, color);
@@ -209,6 +211,28 @@ export default function MapScreen() {
     }, [invertColors])
   );
 
+  // World polygon with holes where hi-res fog tiles are rendered — fogs
+  // everything without tile data once the overview has faded out.
+  const fogFill = useMemo(() => {
+    if (fowTiles.length === 0) return null;
+    const world: [number, number][] = [
+      [-180, -85.0511],
+      [180, -85.0511],
+      [180, 85.0511],
+      [-180, 85.0511],
+      [-180, -85.0511],
+    ];
+    const holes = tileImages.map((img) => {
+      const [tl, tr, br, bl] = img.corners;
+      return [tl, bl, br, tr, tl] as [number, number][];
+    });
+    return {
+      type: "Feature" as const,
+      properties: {},
+      geometry: { type: "Polygon" as const, coordinates: [world, ...holes] },
+    };
+  }, [tileImages, fowTiles.length]);
+
   const locate = () => {
     if (coords) {
       cameraRef.current?.setCamera({
@@ -247,6 +271,18 @@ export default function MapScreen() {
             />
           </ImageSource>
         )}
+        {fogFill && (
+          <ShapeSource id="fog-fill-source" shape={fogFill}>
+            <FillLayer
+              id="fog-fill-layer"
+              style={{
+                fillColor: invertColors ? "rgb(255,255,255)" : "rgb(0,0,0)",
+                fillOpacity: FILL_OPACITY as unknown as number,
+                fillAntialias: false,
+              }}
+            />
+          </ShapeSource>
+        )}
         {tileImages.map((img) => (
           <ImageSource
             id={img.key}
@@ -276,8 +312,8 @@ export default function MapScreen() {
             />
           </ShapeSource>
         )}
-        {trail && (
-          <ShapeSource id="trail-source" shape={trail}>
+        {trail?.lines && (
+          <ShapeSource id="trail-source" shape={trail.lines}>
             <LineLayer
               id="trail-line"
               style={{
@@ -285,6 +321,19 @@ export default function MapScreen() {
                 lineWidth: 3,
                 lineCap: "round",
                 lineJoin: "round",
+              }}
+            />
+          </ShapeSource>
+        )}
+        {trail?.gapDots && (
+          <ShapeSource id="trail-gaps-source" shape={trail.gapDots}>
+            <CircleLayer
+              id="trail-gap-rings"
+              style={{
+                circleRadius: 4,
+                circleColor: "rgba(0,0,0,0)",
+                circleStrokeColor: trailColor(invertColors),
+                circleStrokeWidth: 2,
               }}
             />
           </ShapeSource>

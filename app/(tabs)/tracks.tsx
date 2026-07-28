@@ -12,8 +12,7 @@ import { fowInspect, fowRenderTile } from "@/modules/recorder";
 import * as FileSystem from "expo-file-system/legacy";
 import { fowDir, fowDirPath } from "@/services/cloud/dropbox";
 import { scanFowTiles } from "@/utils/fog/fowSource";
-import { listDays, readDay } from "@/services/trackStore";
-import { routeTotalMiles } from "@/utils/geo";
+import { buildTrail, listDays, readDay } from "@/services/trackStore";
 import { n } from "@/utils/scaling";
 
 type DayRow = { day: string; points: number; miles: number };
@@ -33,7 +32,7 @@ export default function TracksScreen() {
       built.push({
         day,
         points: pts.length,
-        miles: routeTotalMiles(pts.map((p) => [p.lng, p.lat])),
+        miles: buildTrail(pts).miles,
       });
     }
     setRows(built);

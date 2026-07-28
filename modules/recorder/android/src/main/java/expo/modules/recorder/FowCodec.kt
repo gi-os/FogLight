@@ -126,28 +126,33 @@ object FowCodec {
     if (pxPerBlock <= 0) return null
     val cellsPerPx = BITMAP_WIDTH / pxPerBlock
     if (cellsPerPx <= 0) return null
+    val cellsPerRegion = cellsPerPx * cellsPerPx
+    val fogA = (color ushr 24) and 0xFF
+    val rgb = color and 0x00FFFFFF
 
+    // Inverted: start fully fogged, thin the fog by fraction of visited cells.
     val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    bmp.eraseColor(color)
     for ((pos, bitmap) in blocks) {
       val baseX = pos.first * pxPerBlock
       val baseY = pos.second * pxPerBlock
       for (py in 0 until pxPerBlock) {
         for (px in 0 until pxPerBlock) {
-          var any = false
-          outer@ for (cy in py * cellsPerPx until (py + 1) * cellsPerPx) {
+          var cnt = 0
+          for (cy in py * cellsPerPx until (py + 1) * cellsPerPx) {
             for (cx in px * cellsPerPx until (px + 1) * cellsPerPx) {
               val bit = bitmap[(cx shr 3) + cy * 8].toInt() and (1 shl (7 - (cx and 7)))
-              if (bit != 0) {
-                any = true
-                break@outer
-              }
+              if (bit != 0) cnt++
             }
           }
-          if (any) bmp.setPixel(baseX + px, baseY + py, color)
+          if (cnt > 0) {
+            val a = (fogA * (cellsPerRegion - cnt)) / cellsPerRegion
+            bmp.setPixel(baseX + px, baseY + py, (a shl 24) or rgb)
+          }
         }
       }
     }
-    featherAlpha(bmp, radius = (sizePx / 512).coerceIn(1, 4), rgb = color and 0x00FFFFFF)
+    featherAlpha(bmp, radius = (sizePx / 512).coerceIn(1, 4), rgb = rgb)
     FileOutputStream(out).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     bmp.recycle()
     return out.absolutePath
@@ -191,7 +196,11 @@ object FowCodec {
     bmp.setPixels(px, 0, w, 0, 0, w, h)
   }
 
-  /** One world-spanning PNG plotting every visited block across all tiles in dir. */
+  /**
+   * One world-spanning inverted-fog PNG: opaque fog everywhere, thinned by
+   * the fraction of visited cells contributing to each pixel.
+   * sizePx must divide 65536 (use 2048 or 4096).
+   */
   fun renderOverview(context: Context, dirPath: String, sizePx: Int, color: Int): String? {
     val dir = File(dirPath)
     val files = dir.listFiles()?.filter { decodeFilename(it.name) != null } ?: return null
@@ -201,21 +210,41 @@ object FowCodec {
     val newest = files.maxOf { it.lastModified() }
     if (out.exists() && out.lastModified() >= newest) return out.absolutePath
 
-    val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
     val worldBlocks = MAP_WIDTH * TILE_WIDTH // 65536
-    val scale = sizePx.toDouble() / worldBlocks
+    val blocksPerPx = worldBlocks / sizePx
+    if (blocksPerPx < 1) return null
+    val cellsPerPx = blocksPerPx * blocksPerPx * BITMAP_WIDTH * BITMAP_WIDTH
+    val fogA = (color ushr 24) and 0xFF
+    val rgb = color and 0x00FFFFFF
+
+    val visited = IntArray(sizePx * sizePx)
     for (file in files) {
       val id = decodeFilename(file.name) ?: continue
       val tileX = id % MAP_WIDTH
       val tileY = id / MAP_WIDTH
       val blocks = decodeTile(file) ?: continue
-      for (pos in blocks.keys) {
-        val x = ((tileX * TILE_WIDTH + pos.first) * scale).toInt().coerceIn(0, sizePx - 1)
-        val y = ((tileY * TILE_WIDTH + pos.second) * scale).toInt().coerceIn(0, sizePx - 1)
-        bmp.setPixel(x, y, color)
+      for ((pos, bitmap) in blocks) {
+        var cnt = 0
+        for (b in bitmap) cnt += Integer.bitCount(b.toInt() and 0xFF)
+        val x = (tileX * TILE_WIDTH + pos.first) / blocksPerPx
+        val y = (tileY * TILE_WIDTH + pos.second) / blocksPerPx
+        if (x in 0 until sizePx && y in 0 until sizePx) {
+          visited[y * sizePx + x] += cnt
+        }
       }
     }
-    featherAlpha(bmp, radius = 1, rgb = color and 0x00FFFFFF)
+
+    val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    val px = IntArray(sizePx * sizePx)
+    for (i in px.indices) {
+      val v = visited[i]
+      // Boost sparse coverage so thin travel still clears visible fog.
+      val frac = (v.toDouble() * 24.0 / cellsPerPx).coerceAtMost(1.0)
+      val a = (fogA * (1.0 - frac)).toInt()
+      px[i] = (a shl 24) or rgb
+    }
+    bmp.setPixels(px, 0, sizePx, 0, 0, sizePx, sizePx)
+    featherAlpha(bmp, radius = 2, rgb = rgb)
     FileOutputStream(out).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     bmp.recycle()
     return out.absolutePath
