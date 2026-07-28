@@ -33,7 +33,7 @@ import { n } from "@/utils/scaling";
 const TRAIL_POLL_MS = 15_000;
 const FOG_POLL_MS = 2_500;
 const TILE_PX = 1024;
-const OVERVIEW_PX = 4096;
+const OVERVIEW_PX = 2048;
 const OVERVIEW_MAX_ZOOM = 8;
 // ARGB as numbers (passed to the native rasterizer)
 const EXPLORED_DARK = 0xb4ffffff; // white @ ~70% on the dark map
@@ -49,11 +49,13 @@ export default function MapScreen() {
   const [fowTiles, setFowTiles] = useState<FowTile[]>([]);
   const fowTilesRef = useRef<FowTile[]>([]);
   const [overviewUri, setOverviewUri] = useState<string | null>(null);
+  const overviewUriRef = useRef<string | null>(null);
   const [showOverview, setShowOverview] = useState(true);
   const [tileImages, setTileImages] = useState<
     { key: string; uri: string; corners: [number, number][] }[]
   >([]);
   const renderedRef = useRef<Map<string, string>>(new Map());
+  const [fogDebug, setFogDebug] = useState("");
   const hasCentered = useRef(false);
 
   const mapStyle = useMemo(() => buildMapStyle(invertColors), [invertColors]);
@@ -97,31 +99,50 @@ export default function MapScreen() {
       const color = invertColors ? EXPLORED_LIGHT : EXPLORED_DARK;
       const pollFog = async () => {
         const map = mapRef.current;
-        if (!map || fowTilesRef.current.length === 0) return;
+        if (!map) return;
+        if (fowTilesRef.current.length === 0) {
+          if (!cancelled) setFogDebug("no FoW tiles imported");
+          return;
+        }
         try {
           const zoom = await map.getZoom();
           setShowOverview(zoom < OVERVIEW_MAX_ZOOM);
           if (zoom < OVERVIEW_MAX_ZOOM) {
             setTileImages([]);
+            if (!cancelled)
+              setFogDebug(
+                `z${zoom.toFixed(1)} overview ${overviewUriRef.current ? "on" : "missing"} (${fowTilesRef.current.length} tiles)`
+              );
             return;
           }
           const [ne, sw] = await map.getVisibleBounds();
           const needed = tilesInBounds(fowTilesRef.current, ne, sw);
+          let failed = 0;
           const next: { key: string; uri: string; corners: [number, number][] }[] = [];
           for (const tile of needed) {
             const key = `fow-${tile.id}`;
             let uri = renderedRef.current.get(key);
             if (!uri) {
               const rendered = await fowRenderTile(tile.path, TILE_PX, color);
-              if (!rendered) continue;
+              if (!rendered) {
+                failed++;
+                continue;
+              }
               uri = `file://${rendered}`;
               renderedRef.current.set(key, uri);
             }
             next.push({ key, uri, corners: tile.corners });
           }
-          if (!cancelled) setTileImages(next);
-        } catch {
-          // map not ready yet
+          if (!cancelled) {
+            setTileImages(next);
+            setFogDebug(
+              `z${zoom.toFixed(1)} ${next.length}/${needed.length} fog imgs` +
+                (failed ? ` (${failed} failed)` : "")
+            );
+          }
+        } catch (e) {
+          if (!cancelled)
+            setFogDebug(`fog: ${e instanceof Error ? e.message : String(e)}`);
         }
       };
       const fogPollId = setInterval(pollFog, FOG_POLL_MS);
@@ -130,14 +151,25 @@ export default function MapScreen() {
       healRecording();
 
       (async () => {
-        const tiles = await scanFowTiles();
-        if (cancelled) return;
-        fowTilesRef.current = tiles;
-        setFowTiles(tiles);
-        if (tiles.length > 0) {
-          const color = invertColors ? EXPLORED_LIGHT : EXPLORED_DARK;
-          const uri = await fowRenderOverview(fowDirPath(), OVERVIEW_PX, color);
-          if (!cancelled && uri) setOverviewUri(`file://${uri}`);
+        try {
+          const tiles = await scanFowTiles();
+          if (cancelled) return;
+          fowTilesRef.current = tiles;
+          setFowTiles(tiles);
+          if (tiles.length > 0) {
+            const color = invertColors ? EXPLORED_LIGHT : EXPLORED_DARK;
+            const uri = await fowRenderOverview(fowDirPath(), OVERVIEW_PX, color);
+            if (cancelled) return;
+            if (uri) {
+              overviewUriRef.current = `file://${uri}`;
+              setOverviewUri(`file://${uri}`);
+            } else {
+              setFogDebug("overview render returned null");
+            }
+          }
+        } catch (e) {
+          if (!cancelled)
+            setFogDebug(`overview: ${e instanceof Error ? e.message : String(e)}`);
         }
       })();
 
@@ -271,6 +303,11 @@ export default function MapScreen() {
       <HapticPressable onPress={locate} style={styles.locateButton}>
         <StyledText style={styles.locateLabel}>LOCATE</StyledText>
       </HapticPressable>
+      {fogDebug !== "" && (
+        <View style={styles.debugBox}>
+          <StyledText style={styles.debugText}>{fogDebug}</StyledText>
+        </View>
+      )}
     </View>
   );
 }
@@ -289,4 +326,13 @@ const styles = StyleSheet.create({
     paddingVertical: n(8),
   },
   locateLabel: { fontSize: n(14) },
+  debugBox: {
+    position: "absolute",
+    top: n(8),
+    left: n(8),
+    backgroundColor: "rgba(0,0,0,0.7)",
+    paddingHorizontal: n(6),
+    paddingVertical: n(3),
+  },
+  debugText: { fontSize: n(10), color: "white" },
 });

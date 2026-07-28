@@ -8,6 +8,8 @@ import {
   isConnected,
   listImported,
 } from "@/services/cloud/dropbox";
+import { fowRenderTile } from "recorder";
+import { scanFowTiles } from "@/utils/fog/fowSource";
 import { listDays, readDay } from "@/services/trackStore";
 import { routeTotalMiles } from "@/utils/geo";
 import { n } from "@/utils/scaling";
@@ -48,9 +50,24 @@ export default function TracksScreen() {
     setImportStatus("Checking Dropbox…");
     try {
       const r = await importNewGpx();
+      let renderCheck = "";
+      if (r.fowTotal > 0) {
+        try {
+          const tiles = await scanFowTiles();
+          if (tiles.length > 0) {
+            const test = await fowRenderTile(tiles[0].path, 1024, 0xb4ffffff);
+            renderCheck = test ? " Render check: OK." : " Render check: FAILED.";
+          } else {
+            renderCheck = " Render check: no tiles found on disk.";
+          }
+        } catch (e) {
+          renderCheck = ` Render check: ${e instanceof Error ? e.message : "error"}.`;
+        }
+      }
       setImportStatus(
         `GPX: +${r.gpxAdded} new (${r.gpxTotal} total). ` +
-          `Fog of World tiles: +${r.fowAdded} new (${r.fowTotal} total).`
+          `Fog of World tiles: +${r.fowAdded} new (${r.fowTotal} total).` +
+          renderCheck
       );
       await refresh();
     } catch (e) {
