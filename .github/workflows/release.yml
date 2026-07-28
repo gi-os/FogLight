@@ -43,6 +43,16 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Stamp version into app.json
+        run: |
+          node -e "
+            const fs = require('fs');
+            const j = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+            j.expo.version = '${{ steps.ver.outputs.name }}';
+            j.expo.android.versionCode = ${{ github.run_number }};
+            fs.writeFileSync('app.json', JSON.stringify(j, null, 2));
+          "
+
       - name: Prebuild android project
         run: bunx expo prebuild --platform android --no-install
 

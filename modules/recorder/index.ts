@@ -30,3 +30,21 @@ export function ensureRunning(intervalMs = 10_000): void {
 export function tracksDir(): string | null {
   return RecorderModule?.tracksDir() ?? null;
 }
+
+/** Rasterize a Fog of World tile file to a PNG. Returns file path or null. */
+export async function fowRenderTile(
+  path: string,
+  sizePx: number,
+  color: number
+): Promise<string | null> {
+  return (await RecorderModule?.fowRenderTile(path, sizePx, color)) ?? null;
+}
+
+/** Rasterize a world overview PNG from a directory of FoW tile files. */
+export async function fowRenderOverview(
+  dirPath: string,
+  sizePx: number,
+  color: number
+): Promise<string | null> {
+  return (await RecorderModule?.fowRenderOverview(dirPath, sizePx, color)) ?? null;
+}

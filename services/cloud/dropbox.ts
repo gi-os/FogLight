@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system/legacy";
 import { Linking } from "react-native";
+import { decodeTileFilename } from "@/utils/fog/fowMath";
 
 /**
  * Dropbox OAuth2 PKCE (method "plain") + GPX import.
@@ -147,26 +148,74 @@ export async function listGpxFiles(): Promise<DbxEntry[]> {
     url = "https://api.dropboxapi.com/2/files/list_folder/continue";
     body = { cursor: json.cursor };
   }
-  return entries.filter(
-    (e) => e[".tag"] === "file" && e.name.toLowerCase().endsWith(".gpx")
-  );
+  return entries.filter((e) => e[".tag"] === "file");
+}
+
+const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+function toBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let out = "";
+  for (let i = 0; i < bytes.length; i += 3) {
+    const b0 = bytes[i];
+    const b1 = i + 1 < bytes.length ? bytes[i + 1] : 0;
+    const b2 = i + 2 < bytes.length ? bytes[i + 2] : 0;
+    out += B64[b0 >> 2];
+    out += B64[((b0 & 3) << 4) | (b1 >> 4)];
+    out += i + 1 < bytes.length ? B64[((b1 & 15) << 2) | (b2 >> 6)] : "=";
+    out += i + 2 < bytes.length ? B64[b2 & 63] : "=";
+  }
+  return out;
 }
 
 export function importsDir(): string {
   return `${FileSystem.documentDirectory}imports`;
 }
 
-/** Download all .gpx files not yet imported. Returns [newCount, totalRemote]. */
-export async function importNewGpx(): Promise<[number, number]> {
+export function fowDir(): string {
+  return `${importsDir()}/fow`;
+}
+
+/** Native filesystem path (no file:// scheme) of the FoW tiles dir. */
+export function fowDirPath(): string {
+  return fowDir().replace("file://", "");
+}
+
+export type ImportResult = {
+  gpxAdded: number;
+  fowAdded: number;
+  gpxTotal: number;
+  fowTotal: number;
+};
+
+/**
+ * Download everything new: .gpx files, plus any Fog of World sync tiles
+ * (recognized by their masked filenames — drop your FoW "Sync" folder
+ * anywhere inside the app folder).
+ */
+export async function importNewGpx(): Promise<ImportResult> {
   const token = await getAccessToken();
   const remote = await listGpxFiles();
   await FileSystem.makeDirectoryAsync(importsDir(), { intermediates: true }).catch(
     () => undefined
   );
-  const local = new Set(await FileSystem.readDirectoryAsync(importsDir()));
-  let added = 0;
+  await FileSystem.makeDirectoryAsync(fowDir(), { intermediates: true }).catch(
+    () => undefined
+  );
+  const localGpx = new Set(await FileSystem.readDirectoryAsync(importsDir()));
+  const localFow = new Set(await FileSystem.readDirectoryAsync(fowDir()));
+
+  const result: ImportResult = { gpxAdded: 0, fowAdded: 0, gpxTotal: 0, fowTotal: 0 };
+
   for (const entry of remote) {
-    if (local.has(entry.name)) continue;
+    const isGpx = entry.name.toLowerCase().endsWith(".gpx");
+    const isFow = !isGpx && decodeTileFilename(entry.name) != null;
+    if (isGpx) result.gpxTotal++;
+    if (isFow) result.fowTotal++;
+    if (!isGpx && !isFow) continue;
+    if (isGpx && localGpx.has(entry.name)) continue;
+    if (isFow && localFow.has(entry.name)) continue;
+
     const res = await fetch("https://content.dropboxapi.com/2/files/download", {
       method: "POST",
       headers: {
@@ -175,11 +224,21 @@ export async function importNewGpx(): Promise<[number, number]> {
       },
     });
     if (!res.ok) continue;
-    const text = await res.text();
-    await FileSystem.writeAsStringAsync(`${importsDir()}/${entry.name}`, text);
-    added++;
+    if (isGpx) {
+      await FileSystem.writeAsStringAsync(
+        `${importsDir()}/${entry.name}`,
+        await res.text()
+      );
+      result.gpxAdded++;
+    } else {
+      const b64 = toBase64(await res.arrayBuffer());
+      await FileSystem.writeAsStringAsync(`${fowDir()}/${entry.name}`, b64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      result.fowAdded++;
+    }
   }
-  return [added, remote.length];
+  return result;
 }
 
 export async function listImported(): Promise<string[]> {

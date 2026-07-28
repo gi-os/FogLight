@@ -75,7 +75,8 @@ export default function SettingsScreen() {
           <StyledText style={{ fontSize: n(12), marginTop: n(8), opacity: 0.6 }}>
             Create a Scoped/App-folder app at dropbox.com/developers, enable
             files.metadata.read + files.content.read scopes, add redirect URI
-            lightfog://oauth, then paste the app key here.
+            lightfog://oauth, then paste the app key here. Drop GPX files or a
+            copy of your Fog of World Sync folder into Apps/LightFog to import.
           </StyledText>
         </>
       )}

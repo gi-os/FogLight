@@ -1,10 +1,14 @@
 import Geolocation from "@react-native-community/geolocation";
+import { fowRenderOverview, fowRenderTile } from "recorder";
 import {
   Camera,
   type CameraRef,
   CircleLayer,
+  ImageSource,
   LineLayer,
   MapView,
+  type MapViewRef,
+  RasterLayer,
   ShapeSource,
 } from "@maplibre/maplibre-react-native";
 import { useFocusEffect } from "expo-router";
@@ -13,20 +17,43 @@ import { PermissionsAndroid, StyleSheet, View } from "react-native";
 import { HapticPressable } from "@/components/HapticPressable";
 import { StyledText } from "@/components/StyledText";
 import { useInvertColors } from "@/contexts/InvertColorsContext";
-import { listImported, readImported } from "@/services/cloud/dropbox";
+import { fowDirPath, listImported, readImported } from "@/services/cloud/dropbox";
+import { healRecording } from "@/services/recordingState";
 import { readDay, todayKey, toLineString } from "@/services/trackStore";
+import {
+  type FowTile,
+  scanFowTiles,
+  tilesInBounds,
+  WORLD_CORNERS,
+} from "@/utils/fog/fowSource";
 import { parseGpx } from "@/utils/parseGpx";
 import { buildMapStyle, trailColor } from "@/utils/mapStyle";
 import { n } from "@/utils/scaling";
 
 const TRAIL_POLL_MS = 15_000;
+const FOG_POLL_MS = 2_500;
+const TILE_PX = 1024;
+const OVERVIEW_PX = 4096;
+const OVERVIEW_MAX_ZOOM = 8;
+// ARGB as numbers (passed to the native rasterizer)
+const EXPLORED_DARK = 0xb4ffffff; // white @ ~70% on the dark map
+const EXPLORED_LIGHT = 0x59000000; // black @ ~35% on the inverted map
 
 export default function MapScreen() {
   const { invertColors } = useInvertColors();
   const cameraRef = useRef<CameraRef>(null);
+  const mapRef = useRef<MapViewRef>(null);
   const [coords, setCoords] = useState<[number, number] | null>(null);
   const [trail, setTrail] = useState<ReturnType<typeof toLineString> | null>(null);
   const [importedTrails, setImportedTrails] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [fowTiles, setFowTiles] = useState<FowTile[]>([]);
+  const fowTilesRef = useRef<FowTile[]>([]);
+  const [overviewUri, setOverviewUri] = useState<string | null>(null);
+  const [showOverview, setShowOverview] = useState(true);
+  const [tileImages, setTileImages] = useState<
+    { key: string; uri: string; corners: [number, number][] }[]
+  >([]);
+  const renderedRef = useRef<Map<string, string>>(new Map());
   const hasCentered = useRef(false);
 
   const mapStyle = useMemo(() => buildMapStyle(invertColors), [invertColors]);
@@ -67,6 +94,53 @@ export default function MapScreen() {
       loadTrail();
       pollId = setInterval(loadTrail, TRAIL_POLL_MS);
 
+      const color = invertColors ? EXPLORED_LIGHT : EXPLORED_DARK;
+      const pollFog = async () => {
+        const map = mapRef.current;
+        if (!map || fowTilesRef.current.length === 0) return;
+        try {
+          const zoom = await map.getZoom();
+          setShowOverview(zoom < OVERVIEW_MAX_ZOOM);
+          if (zoom < OVERVIEW_MAX_ZOOM) {
+            setTileImages([]);
+            return;
+          }
+          const [ne, sw] = await map.getVisibleBounds();
+          const needed = tilesInBounds(fowTilesRef.current, ne, sw);
+          const next: { key: string; uri: string; corners: [number, number][] }[] = [];
+          for (const tile of needed) {
+            const key = `fow-${tile.id}`;
+            let uri = renderedRef.current.get(key);
+            if (!uri) {
+              const rendered = await fowRenderTile(tile.path, TILE_PX, color);
+              if (!rendered) continue;
+              uri = `file://${rendered}`;
+              renderedRef.current.set(key, uri);
+            }
+            next.push({ key, uri, corners: tile.corners });
+          }
+          if (!cancelled) setTileImages(next);
+        } catch {
+          // map not ready yet
+        }
+      };
+      const fogPollId = setInterval(pollFog, FOG_POLL_MS);
+      pollFog();
+
+      healRecording();
+
+      (async () => {
+        const tiles = await scanFowTiles();
+        if (cancelled) return;
+        fowTilesRef.current = tiles;
+        setFowTiles(tiles);
+        if (tiles.length > 0) {
+          const color = invertColors ? EXPLORED_LIGHT : EXPLORED_DARK;
+          const uri = await fowRenderOverview(fowDirPath(), OVERVIEW_PX, color);
+          if (!cancelled && uri) setOverviewUri(`file://${uri}`);
+        }
+      })();
+
       (async () => {
         const names = await listImported();
         const features: GeoJSON.Feature[] = [];
@@ -93,8 +167,9 @@ export default function MapScreen() {
         cancelled = true;
         if (watchId != null) Geolocation.clearWatch(watchId);
         if (pollId != null) clearInterval(pollId);
+        clearInterval(fogPollId);
       };
-    }, [])
+    }, [invertColors])
   );
 
   const locate = () => {
@@ -110,6 +185,7 @@ export default function MapScreen() {
   return (
     <View style={styles.container}>
       <MapView
+        ref={mapRef}
         attributionEnabled={false}
         compassEnabled={false}
         logoEnabled={false}
@@ -119,6 +195,32 @@ export default function MapScreen() {
         style={styles.map}
       >
         <Camera ref={cameraRef} />
+        {overviewUri && showOverview && fowTiles.length > 0 && (
+          <ImageSource
+            id="fow-overview"
+            url={overviewUri}
+            coordinates={WORLD_CORNERS}
+          >
+            <RasterLayer
+              id="fow-overview-layer"
+              style={{ rasterOpacity: 0.9, rasterResampling: "nearest" }}
+            />
+          </ImageSource>
+        )}
+        {!showOverview &&
+          tileImages.map((img) => (
+            <ImageSource
+              id={img.key}
+              key={img.key}
+              url={img.uri}
+              coordinates={img.corners}
+            >
+              <RasterLayer
+                id={`${img.key}-layer`}
+                style={{ rasterOpacity: 0.9, rasterResampling: "nearest" }}
+              />
+            </ImageSource>
+          ))}
         {importedTrails && (
           <ShapeSource id="imported-source" shape={importedTrails}>
             <LineLayer

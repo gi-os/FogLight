@@ -1,13 +1,7 @@
 import { useFocusEffect } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { PermissionsAndroid } from "react-native";
-import {
-  ensureRunning,
-  isRecording,
-  isServiceAlive,
-  startRecording,
-  stopRecording,
-} from "recorder";
+import { startRecording, stopRecording } from "recorder";
 import ContentContainer from "@/components/ContentContainer";
 import { OptionsSelector } from "@/components/OptionsSelector";
 import { StyledButton } from "@/components/StyledButton";
@@ -25,26 +19,29 @@ const INTERVAL_MS: Record<string, number> = {
 };
 
 export default function RecordScreen() {
-  const [running, setRunning] = useState(false);
-  const [alive, setAlive] = useState(false);
-  const [pointsToday, setPointsToday] = useState(0);
+  // Persisted user intent — the single source of truth for the UI.
+  const [recordOn, setRecordOn] = usePersistedState("recordingOn", false);
   const [interval, setIntervalPref] = usePersistedState("recordInterval", "10s");
+  const [pointsToday, setPointsToday] = useState(0);
+
+  // Whenever intent is on (including after app restart), ensure the
+  // service is running. startRecording is idempotent.
+  useEffect(() => {
+    if (recordOn) {
+      startRecording(INTERVAL_MS[interval] ?? 10_000);
+    }
+  }, [recordOn, interval]);
 
   useFocusEffect(
     useCallback(() => {
-      // Self-heal: if recording is on but the OS killed the service, restart it.
-      ensureRunning(INTERVAL_MS[interval] ?? 10_000);
-      setRunning(isRecording());
-      setAlive(isServiceAlive());
       readDay(todayKey()).then((pts) => setPointsToday(pts.length));
-    }, [interval])
+    }, [])
   );
 
   const toggle = async () => {
-    if (running) {
+    if (recordOn) {
       stopRecording();
-      setRunning(false);
-      setAlive(false);
+      await setRecordOn(false);
       return;
     }
     const fine = await PermissionsAndroid.request(
@@ -55,21 +52,14 @@ export default function RecordScreen() {
       PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
     ).catch(() => undefined);
     startRecording(INTERVAL_MS[interval] ?? 10_000);
-    setRunning(true);
-    setAlive(true);
+    await setRecordOn(true);
   };
-
-  const statusLine = running
-    ? alive
-      ? "Recording — leave it running, the fog clears itself."
-      : "Recording enabled — service restarting…"
-    : "Not recording.";
 
   return (
     <ContentContainer headerTitle="Record" hideBackButton>
       <StyledButton
         onPress={toggle}
-        text={running ? "Stop Recording" : "Start Recording"}
+        text={recordOn ? "Stop Recording" : "Start Recording"}
       />
       <StyledText style={{ fontSize: n(14), marginTop: n(16) }}>
         GPS Interval
@@ -80,7 +70,9 @@ export default function RecordScreen() {
         selectedValue={interval}
       />
       <StyledText style={{ fontSize: n(14), marginTop: n(16) }}>
-        {statusLine}
+        {recordOn
+          ? "Recording — leave it running, the fog clears itself."
+          : "Not recording."}
       </StyledText>
       <StyledText style={{ fontSize: n(14), marginTop: n(8) }}>
         Points today: {pointsToday}

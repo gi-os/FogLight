@@ -47,8 +47,11 @@ export default function TracksScreen() {
     setImporting(true);
     setImportStatus("Checking Dropbox…");
     try {
-      const [added, total] = await importNewGpx();
-      setImportStatus(`Imported ${added} new (${total} GPX in Dropbox).`);
+      const r = await importNewGpx();
+      setImportStatus(
+        `GPX: +${r.gpxAdded} new (${r.gpxTotal} total). ` +
+          `Fog of World tiles: +${r.fowAdded} new (${r.fowTotal} total).`
+      );
       await refresh();
     } catch (e) {
       setImportStatus(e instanceof Error ? e.message : "Import failed.");
@@ -62,7 +65,7 @@ export default function TracksScreen() {
       {connected ? (
         <StyledButton
           onPress={importing ? undefined : doImport}
-          text={importing ? "Importing…" : "Import GPX from Dropbox"}
+          text={importing ? "Importing…" : "Import from Dropbox"}
         />
       ) : (
         <StyledText style={{ fontSize: n(13), opacity: 0.7 }}>
