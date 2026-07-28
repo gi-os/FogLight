@@ -39,11 +39,11 @@ const HIRES_ZOOM = 12.5;
 // Crossfade: overview fades out z6->8 while detail tiles fade in z6->7.5
 const OVERVIEW_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 1, 8, 0] as const;
 const TILE_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 0, 7.5, 1] as const;
-const FILL_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 0, 7.5, 0.95] as const;
-// ARGB fog colors — near-opaque black hides the colored basemap where
-// unexplored; explored areas are the only colorful thing on screen.
-const FOG_DARK = 0xf2000000; // black fog @ ~95% over the colored map
-const FOG_LIGHT = 0xf2f5f5f5; // pale fog @ ~95% over the light map
+const FILL_OPACITY = ["interpolate", ["linear"], ["zoom"], 6, 0, 7.5, 0.78] as const;
+// ARGB fog colors — a desaturating veil: unexplored still shows the map in
+// near-monochrome (structure visible, color crushed); explored is full color.
+const FOG_DARK = 0xc70a0a0a; // dark veil @ ~78% — B+W unexplored
+const FOG_LIGHT = 0xc7f0f0f0; // pale veil @ ~78% on the light theme
 
 export default function MapScreen() {
   const { invertColors } = useInvertColors();
@@ -277,7 +277,7 @@ export default function MapScreen() {
             <FillLayer
               id="fog-fill-layer"
               style={{
-                fillColor: invertColors ? "rgb(245,245,245)" : "rgb(0,0,0)",
+                fillColor: invertColors ? "rgb(240,240,240)" : "rgb(10,10,10)",
                 fillOpacity: FILL_OPACITY as unknown as number,
                 fillAntialias: false,
               }}
