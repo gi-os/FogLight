@@ -1,0 +1,72 @@
+name: Build & Release APK
+
+# LightQR-style CI: auto-builds an APK on every push to main and publishes it
+# as a GitHub Release. Obtainium watches this repo's releases. No EAS account
+# needed — `expo prebuild` + plain Gradle on the runner.
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute version
+        id: ver
+        run: |
+          BASE=$(node -p "require('./app.json').expo.version")
+          echo "name=${BASE}.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Prebuild android project
+        run: bunx expo prebuild --platform android --no-install
+
+      - name: Build release APK
+        working-directory: android
+        run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+
+      - name: Rename APK
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk \
+             LightFog-v${{ steps.ver.outputs.name }}.apk
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.name }}
+          name: LightFog v${{ steps.ver.outputs.name }}
+          body: |
+            Automated build of LightFog — Fog of World companion for the Light Phone III.
+
+            **Install / update via Obtainium** — point it at this repo:
+            `https://github.com/gi-os/LightFog`
+
+            Or sideload with ADB:
+            `adb install -r LightFog-v${{ steps.ver.outputs.name }}.apk`
+          files: LightFog-v${{ steps.ver.outputs.name }}.apk
