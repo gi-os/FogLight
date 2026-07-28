@@ -12,7 +12,7 @@ class RecorderModule : Module() {
     Name("Recorder")
 
     Function("start") { intervalMs: Int ->
-      val context = appContext.reactContext ?: return@Function
+      val context = appContext.reactContext ?: return@Function null
       prefs(context).edit()
         .putBoolean(KEY_RUNNING, true)
         .putInt(KEY_INTERVAL, intervalMs)
@@ -23,14 +23,14 @@ class RecorderModule : Module() {
       } else {
         context.startService(intent)
       }
-      Unit
+      null
     }
 
     Function("stop") {
-      val context = appContext.reactContext ?: return@Function
+      val context = appContext.reactContext ?: return@Function null
       prefs(context).edit().putBoolean(KEY_RUNNING, false).apply()
       context.stopService(Intent(context, RecorderService::class.java))
-      Unit
+      null
     }
 
     // User intent (prefs), not service liveness — the UI's source of truth.
