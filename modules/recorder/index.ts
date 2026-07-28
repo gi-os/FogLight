@@ -31,13 +31,17 @@ export function tracksDir(): string | null {
   return RecorderModule?.tracksDir() ?? null;
 }
 
+/** Fog styles: 0 smooth, 1 crisp pixels, 2 pixels upscaled with Scale2x. */
+export type FogStyle = 0 | 1 | 2;
+
 /** Rasterize a Fog of World tile file to a PNG. Returns file path or null. */
 export async function fowRenderTile(
   path: string,
   sizePx: number,
-  color: number
+  color: number,
+  style: FogStyle = 0
 ): Promise<string | null> {
-  return (await RecorderModule?.fowRenderTile(path, sizePx, color)) ?? null;
+  return (await RecorderModule?.fowRenderTile(path, sizePx, color, style)) ?? null;
 }
 
 /** Rasterize a world overview PNG from a directory of FoW tile files. */

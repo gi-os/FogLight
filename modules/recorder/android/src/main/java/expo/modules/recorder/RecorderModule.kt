@@ -78,9 +78,9 @@ class RecorderModule : Module() {
       blocks != null && blocks.isNotEmpty()
     }
 
-    AsyncFunction("fowRenderTile") { path: String, sizePx: Int, color: Double ->
+    AsyncFunction("fowRenderTile") { path: String, sizePx: Int, color: Double, style: Int ->
       val context = appContext.reactContext ?: return@AsyncFunction null
-      FowCodec.renderTile(context, path, sizePx, color.toLong().toInt())
+      FowCodec.renderTile(context, path, sizePx, color.toLong().toInt(), style)
     }
 
     AsyncFunction("fowRenderOverview") { dirPath: String, sizePx: Int, color: Double ->

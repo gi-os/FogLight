@@ -1,6 +1,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Geolocation from "@react-native-community/geolocation";
-import { fowRenderOverview, fowRenderTile, setGrayscale } from "@/modules/recorder";
+import {
+  type FogStyle,
+  fowRenderOverview,
+  fowRenderTile,
+  setGrayscale,
+} from "@/modules/recorder";
 import {
   Camera,
   type CameraRef,
@@ -65,6 +70,7 @@ export default function MapScreen() {
   const [fogDebug, setFogDebug] = useState("");
   const [fogDensity, setFogDensity] = useState(DEFAULT_DENSITY);
   const [debugEnabled, setDebugEnabled] = useState(false);
+  const [fogStyle, setFogStyle] = useState<FogStyle>(0);
   const hasCentered = useRef(false);
 
   const fogColor = useMemo(() => {
@@ -134,7 +140,7 @@ export default function MapScreen() {
               );
             return;
           }
-          const sizePx = zoom >= HIRES_ZOOM ? 2048 : 1024;
+          const sizePx = fogStyle === 2 ? 1024 : zoom >= HIRES_ZOOM ? 2048 : 1024;
           const [ne, sw] = (await map.getVisibleBounds()) as [
             [number, number],
             [number, number],
@@ -143,10 +149,10 @@ export default function MapScreen() {
           let failed = 0;
           const next: { key: string; uri: string; corners: Corners }[] = [];
           for (const tile of needed) {
-            const key = `fow-${tile.id}-${sizePx}-${fogColor}`;
+            const key = `fow-${tile.id}-${sizePx}-${fogColor}-${fogStyle}`;
             let uri = renderedRef.current.get(key);
             if (!uri) {
-              const rendered = await fowRenderTile(tile.path, sizePx, fogColor);
+              const rendered = await fowRenderTile(tile.path, sizePx, fogColor, fogStyle);
               if (!rendered) {
                 failed++;
                 continue;
@@ -185,6 +191,17 @@ export default function MapScreen() {
       AsyncStorage.getItem("fogDebugEnabled")
         .then((raw) => {
           if (!cancelled) setDebugEnabled(raw != null && JSON.parse(raw) === true);
+        })
+        .catch(() => undefined);
+      Promise.all([
+        AsyncStorage.getItem("fogStyle"),
+        AsyncStorage.getItem("fogScale2x"),
+      ])
+        .then(([styleRaw, s2xRaw]) => {
+          if (cancelled) return;
+          const style = styleRaw != null ? JSON.parse(styleRaw) : "smooth";
+          const s2x = s2xRaw != null ? JSON.parse(s2xRaw) === true : true;
+          setFogStyle(style === "pixel" ? (s2x ? 2 : 1) : 0);
         })
         .catch(() => undefined);
 
@@ -242,7 +259,7 @@ export default function MapScreen() {
         if (pollId != null) clearInterval(pollId);
         clearInterval(fogPollId);
       };
-    }, [invertColors, fogColor])
+    }, [invertColors, fogColor, fogStyle])
   );
 
   // World polygon with holes where hi-res fog tiles are rendered — fogs
@@ -329,6 +346,7 @@ export default function MapScreen() {
               style={{
                 rasterOpacity: TILE_OPACITY as unknown as number,
                 rasterFadeDuration: 300,
+                ...(fogStyle !== 0 ? { rasterResampling: "nearest" as const } : {}),
               }}
             />
           </ImageSource>

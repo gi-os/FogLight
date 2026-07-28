@@ -18,10 +18,17 @@ import {
 } from "@/services/cloud/dropbox";
 import { n } from "@/utils/scaling";
 
+const FOG_STYLES = [
+  { label: "Smooth", value: "smooth" },
+  { label: "Pixels", value: "pixel" },
+] as const;
+
 export default function SettingsScreen() {
   const { invertColors, setInvertColors } = useInvertColors();
   const [fogDensity, setFogDensity] = usePersistedState("fogDensity", 78);
   const [fogDebugOn, setFogDebugOn] = usePersistedState("fogDebugEnabled", false);
+  const [fogStyle, setFogStyle] = usePersistedState("fogStyle", "smooth");
+  const [fogScale2x, setFogScale2x] = usePersistedState("fogScale2x", true);
   const [appKey, setAppKeyState] = useState("");
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -66,6 +73,25 @@ export default function SettingsScreen() {
         onChange={setFogDensity}
         value={fogDensity}
       />
+
+      <StyledText style={{ fontSize: n(14), marginTop: n(16) }}>
+        Fog Style
+      </StyledText>
+      {FOG_STYLES.map((o) => (
+        <StyledButton
+          key={o.value}
+          onPress={() => setFogStyle(o.value as string)}
+          selected={fogStyle === o.value}
+          text={o.label}
+        />
+      ))}
+      {fogStyle === "pixel" && (
+        <ToggleSwitch
+          label="Pixel Smoothing (Scale2x)"
+          onValueChange={setFogScale2x}
+          value={fogScale2x}
+        />
+      )}
 
       <ToggleSwitch
         label="Fog Debug Overlay"
