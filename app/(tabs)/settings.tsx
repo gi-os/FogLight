@@ -30,6 +30,7 @@ export default function SettingsScreen() {
   const [fogStyle, setFogStyle] = usePersistedState("fogStyle", "smooth");
   const [fogScale2x, setFogScale2x] = usePersistedState("fogScale2x", true);
   const [fogBlur, setFogBlur] = usePersistedState("fogBlur", true);
+  const [lightMap, setLightMap] = usePersistedState("lightMap", false);
   const [appKey, setAppKeyState] = useState("");
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -64,6 +65,12 @@ export default function SettingsScreen() {
         label="Invert Colours"
         onValueChange={setInvertColors}
         value={invertColors}
+      />
+
+      <ToggleSwitch
+        label="White Map"
+        onValueChange={setLightMap}
+        value={lightMap}
       />
 
       <SliderRow

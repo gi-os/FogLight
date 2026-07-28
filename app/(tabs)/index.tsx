@@ -19,7 +19,7 @@ import {
   ShapeSource,
 } from "@maplibre/maplibre-react-native";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PermissionsAndroid, StyleSheet, View } from "react-native";
 import { HapticPressable } from "@/components/HapticPressable";
 import { StyledText } from "@/components/StyledText";
@@ -71,13 +71,34 @@ export default function MapScreen() {
   const [fogDensity, setFogDensity] = useState(DEFAULT_DENSITY);
   const [debugEnabled, setDebugEnabled] = useState(false);
   const [fogStyle, setFogStyle] = useState<FogStyle>(0);
+  const [lightMap, setLightMap] = useState(false);
+  const [initialCam, setInitialCam] = useState<
+    { center: [number, number]; zoom: number } | null | undefined
+  >(undefined); // undefined = still loading, null = none saved
   const hasCentered = useRef(false);
+
+  const lightBase = lightMap || invertColors;
 
   const fogColor = useMemo(() => {
     const alpha = Math.round((fogDensity / 100) * 255);
-    const rgb = invertColors ? FOG_RGB_LIGHT : FOG_RGB_DARK;
+    const rgb = lightBase ? FOG_RGB_LIGHT : FOG_RGB_DARK;
     return alpha * 0x1000000 + rgb;
-  }, [fogDensity, invertColors]);
+  }, [fogDensity, lightBase]);
+
+  useEffect(() => {
+    AsyncStorage.getItem("lastCamera")
+      .then((raw) => {
+        if (raw != null) {
+          const v = JSON.parse(raw);
+          if (Array.isArray(v.center) && Number.isFinite(v.zoom)) {
+            setInitialCam({ center: v.center, zoom: v.zoom });
+            return;
+          }
+        }
+        setInitialCam(null);
+      })
+      .catch(() => setInitialCam(null));
+  }, []);
 
   const fillOpacity = useMemo(
     () =>
@@ -85,7 +106,7 @@ export default function MapScreen() {
     [fogDensity]
   );
 
-  const mapStyle = useMemo(() => buildMapStyle(invertColors), [invertColors]);
+  const mapStyle = useMemo(() => buildMapStyle(lightBase), [lightBase]);
 
   useFocusEffect(
     useCallback(() => {
@@ -132,6 +153,15 @@ export default function MapScreen() {
         }
         try {
           const zoom = await map.getZoom();
+          try {
+            const center = await map.getCenter();
+            AsyncStorage.setItem(
+              "lastCamera",
+              JSON.stringify({ center, zoom })
+            ).catch(() => undefined);
+          } catch {
+            // ignore
+          }
           if (zoom < TILE_MIN_ZOOM) {
             setTileImages([]);
             if (!cancelled)
@@ -186,6 +216,11 @@ export default function MapScreen() {
             const v = Number(JSON.parse(raw));
             if (Number.isFinite(v)) setFogDensity(v);
           }
+        })
+        .catch(() => undefined);
+      AsyncStorage.getItem("lightMap")
+        .then((raw) => {
+          if (!cancelled) setLightMap(raw != null && JSON.parse(raw) === true);
         })
         .catch(() => undefined);
       AsyncStorage.getItem("fogDebugEnabled")
@@ -261,7 +296,7 @@ export default function MapScreen() {
         if (pollId != null) clearInterval(pollId);
         clearInterval(fogPollId);
       };
-    }, [invertColors, fogColor, fogStyle])
+    }, [lightBase, fogColor, fogStyle])
   );
 
   // World polygon with holes where hi-res fog tiles are rendered — fogs
@@ -296,6 +331,10 @@ export default function MapScreen() {
     }
   };
 
+  if (initialCam === undefined) {
+    return <View style={styles.container} />;
+  }
+
   return (
     <View style={styles.container}>
       <MapView
@@ -308,7 +347,14 @@ export default function MapScreen() {
         mapStyle={mapStyle}
         style={styles.map}
       >
-        <Camera ref={cameraRef} />
+        <Camera
+          ref={cameraRef}
+          defaultSettings={
+            initialCam
+              ? { centerCoordinate: initialCam.center, zoomLevel: initialCam.zoom }
+              : undefined
+          }
+        />
         {overviewUri && fowTiles.length > 0 && (
           <ImageSource
             id="fow-overview"
@@ -329,7 +375,7 @@ export default function MapScreen() {
             <FillLayer
               id="fog-fill-layer"
               style={{
-                fillColor: invertColors ? "rgb(240,240,240)" : "rgb(10,10,10)",
+                fillColor: lightBase ? "rgb(240,240,240)" : "rgb(10,10,10)",
                 fillOpacity: fillOpacity as unknown as number,
                 fillAntialias: false,
               }}
@@ -360,7 +406,7 @@ export default function MapScreen() {
             <LineLayer
               id="imported-lines"
               style={{
-                lineColor: invertColors ? "#888888" : "#777777",
+                lineColor: lightBase ? "#888888" : "#777777",
                 lineWidth: 2,
                 lineCap: "round",
                 lineJoin: "round",
@@ -373,7 +419,7 @@ export default function MapScreen() {
             <LineLayer
               id="trail-line"
               style={{
-                lineColor: trailColor(invertColors),
+                lineColor: trailColor(lightBase),
                 lineWidth: 3,
                 lineCap: "round",
                 lineJoin: "round",
@@ -396,7 +442,17 @@ export default function MapScreen() {
                   12,
                 ] as unknown as number,
                 circleColor: "rgba(0,0,0,0)",
-                circleStrokeColor: trailColor(invertColors),
+                circleOpacity: 0,
+                circleStrokeOpacity: [
+                  "interpolate",
+                  ["linear"],
+                  ["zoom"],
+                  10.5,
+                  0,
+                  11.5,
+                  1,
+                ] as unknown as number,
+                circleStrokeColor: trailColor(lightBase),
                 circleStrokeWidth: [
                   "interpolate",
                   ["linear"],
@@ -423,8 +479,8 @@ export default function MapScreen() {
               id="me-dot"
               style={{
                 circleRadius: 6,
-                circleColor: invertColors ? "black" : "white",
-                circleStrokeColor: invertColors ? "white" : "black",
+                circleColor: lightBase ? "black" : "white",
+                circleStrokeColor: lightBase ? "white" : "black",
                 circleStrokeWidth: 2,
               }}
             />
