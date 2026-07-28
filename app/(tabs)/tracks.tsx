@@ -8,7 +8,9 @@ import {
   isConnected,
   listImported,
 } from "@/services/cloud/dropbox";
-import { fowRenderTile } from "recorder";
+import { fowInspect, fowRenderTile } from "recorder";
+import * as FileSystem from "expo-file-system/legacy";
+import { fowDir, fowDirPath } from "@/services/cloud/dropbox";
 import { scanFowTiles } from "@/utils/fog/fowSource";
 import { listDays, readDay } from "@/services/trackStore";
 import { routeTotalMiles } from "@/utils/geo";
@@ -57,8 +59,21 @@ export default function TracksScreen() {
           if (tiles.length > 0) {
             const test = await fowRenderTile(tiles[0].path, 1024, 0xb4ffffff);
             renderCheck = test ? " Render check: OK." : " Render check: FAILED.";
+            if (!test) {
+              renderCheck += ` Inspect: ${await fowInspect(tiles[0].path)}`;
+            }
           } else {
-            renderCheck = " Render check: no tiles found on disk.";
+            renderCheck = " Render check: no tiles on disk.";
+            try {
+              const names = await FileSystem.readDirectoryAsync(fowDir());
+              if (names.length > 0) {
+                renderCheck += ` Inspect(${names[0]}): ${await fowInspect(
+                  `${fowDirPath()}/${names[0]}`
+                )}`;
+              }
+            } catch {
+              // ignore
+            }
           }
         } catch (e) {
           renderCheck = ` Render check: ${e instanceof Error ? e.message : "error"}.`;

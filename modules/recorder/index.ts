@@ -53,3 +53,8 @@ export async function fowRenderOverview(
 export async function fowValidate(path: string): Promise<boolean> {
   return (await RecorderModule?.fowValidate(path)) ?? false;
 }
+
+/** Debug: step-by-step decode report for a FoW tile file. */
+export async function fowInspect(path: string): Promise<string> {
+  return (await RecorderModule?.fowInspect(path)) ?? "native module missing";
+}
