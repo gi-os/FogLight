@@ -1,5 +1,4 @@
-import { darkMatter } from "./mapStyle/darkMatter";
-import { positron } from "./mapStyle/positron";
+import { coloredDark, coloredLight } from "./mapStyle/colored";
 import type { Palette } from "./mapStyle/types";
 
 const TILE_BASE = "https://tiles.openstreetmap.us/vector";
@@ -10,7 +9,8 @@ export function buildMapStyle(invertColors = false, offlineOnly = false) {
       ? `http://localhost:0/${path}/{z}/{x}/{y}`
       : `${TILE_BASE}/${path}/{z}/{x}/{y}.mvt`;
 
-  const c: Palette = invertColors ? positron : darkMatter;
+  // Full-color palette: explored areas (where fog lifts) show in color.
+  const c: Palette = invertColors ? coloredLight : coloredDark;
 
   return JSON.stringify({
     version: 8,
@@ -25,16 +25,16 @@ export function buildMapStyle(invertColors = false, offlineOnly = false) {
       },
     },
     layers: [
-      { id: "background", type: "background", paint: { "background-color": invertColors ? c.background : "#161616" } },
+      { id: "background", type: "background", paint: { "background-color": invertColors ? c.background : "#101010" } },
       { id: "landcover", type: "fill", source: "osm", "source-layer": "landcover", paint: { "fill-color": c.landcover } },
       { id: "landuse", type: "fill", source: "osm", "source-layer": "landuse", paint: { "fill-color": c.landuse } },
       { id: "park", type: "fill", source: "osm", "source-layer": "park", paint: { "fill-color": c.park } },
       // Solid water so land/ocean read clearly even at world zoom.
       {
         id: "water", type: "fill", source: "osm", "source-layer": "water",
-        paint: { "fill-color": invertColors ? "#c2c8ca" : "#050607", "fill-opacity": 1 },
+        paint: { "fill-color": c.waterFill, "fill-opacity": 1 },
       },
-      { id: "waterway", type: "line", source: "osm", "source-layer": "waterway", paint: { "line-color": c.waterway, "line-width": 1, "line-opacity": 0.5 } },
+      { id: "waterway", type: "line", source: "osm", "source-layer": "waterway", paint: { "line-color": c.waterway, "line-width": 1, "line-opacity": 0.8 } },
       // Country borders help continents read when zoomed out.
       {
         id: "boundary-country", type: "line", source: "osm", "source-layer": "boundary",

@@ -149,15 +149,13 @@ object FowCodec {
         }
       }
     }
-    blurGrid(frac, sizePx, sizePx, radius = (sizePx / 512).coerceIn(1, 4))
+    blurGrid(frac, sizePx, sizePx, radius = 1)
     val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
     bmp.setPixels(colorize(frac, color), 0, sizePx, 0, 0, sizePx, sizePx)
     FileOutputStream(out).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     bmp.recycle()
     return out.absolutePath
   }
-
-  private const val RIM_ALPHA = 80
 
   /** Two-pass box blur over an int grid (feathering for coverage values). */
   private fun blurGrid(a: IntArray, w: Int, h: Int, radius: Int) {
@@ -185,32 +183,14 @@ object FowCodec {
     }
   }
 
-  /**
-   * Coverage (0..255) -> ARGB: heavy fog where unexplored, fully clear where
-   * explored, with a soft glowing rim along the boundary so clearings pop on
-   * a mostly-dark map.
-   */
+  /** Coverage (0..255) -> ARGB: fog alpha thins linearly with coverage. */
   private fun colorize(frac: IntArray, fog: Int): IntArray {
     val fogA = (fog ushr 24) and 0xFF
-    val fr = (fog shr 16) and 0xFF
-    val fg = (fog shr 8) and 0xFF
-    val fb = fog and 0xFF
-    val rimC = if ((fr + fg + fb) / 3 < 128) 255 else 0 // white rim on dark fog
+    val rgb = fog and 0x00FFFFFF
     val out = IntArray(frac.size)
     for (i in out.indices) {
-      val f = frac[i]
-      if (f == 0) {
-        out[i] = (fogA shl 24) or (fr shl 16) or (fg shl 8) or fb
-        continue
-      }
-      val rim = (4 * f * (255 - f)) / 255 // 0..255, peaks at the boundary
-      val alpha = ((fogA * (255 - f)) / 255 + (RIM_ALPHA * rim) / 255)
-        .coerceAtMost(255)
-      val t = (rim * 6 / 5).coerceAtMost(255) // whitening toward the rim color
-      val r = fr + ((rimC - fr) * t) / 255
-      val g = fg + ((rimC - fg) * t) / 255
-      val b = fb + ((rimC - fb) * t) / 255
-      out[i] = (alpha shl 24) or (r shl 16) or (g shl 8) or b
+      val alpha = (fogA * (255 - frac[i])) / 255
+      out[i] = (alpha shl 24) or rgb
     }
     return out
   }
@@ -256,7 +236,7 @@ object FowCodec {
       // Boost sparse coverage so thin travel still clears visible fog.
       frac[i] = ((visited[i].toDouble() * 24.0 * 255.0) / cellsPerPx).toInt().coerceAtMost(255)
     }
-    blurGrid(frac, sizePx, sizePx, radius = 2)
+    blurGrid(frac, sizePx, sizePx, radius = 1)
     val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
     bmp.setPixels(colorize(frac, color), 0, sizePx, 0, 0, sizePx, sizePx)
     FileOutputStream(out).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
