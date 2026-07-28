@@ -70,5 +70,5 @@ export function buildMapStyle(invertColors = false, offlineOnly = false) {
 }
 
 export function trailColor(invertColors: boolean): string {
-  return invertColors ? positron.route : darkMatter.route;
+  return invertColors ? coloredLight.route : coloredDark.route;
 }
