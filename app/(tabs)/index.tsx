@@ -1,5 +1,5 @@
 import Geolocation from "@react-native-community/geolocation";
-import { fowRenderOverview, fowRenderTile } from "recorder";
+import { fowRenderOverview, fowRenderTile } from "@/modules/recorder";
 import {
   Camera,
   type CameraRef,

@@ -29,8 +29,7 @@
     "react-native": "0.83.4",
     "react-native-gesture-handler": "2.30.1",
     "react-native-safe-area-context": "5.7.0",
-    "react-native-screens": "4.24.0",
-    "recorder": "file:./modules/recorder"
+    "react-native-screens": "4.24.0"
   },
   "devDependencies": {
     "@biomejs/biome": "2.2.4",
@@ -38,5 +37,13 @@
     "typescript": "~5.9.2",
     "ultracite": "5.6.2"
   },
-  "private": true
+  "private": true,
+  "expo": {
+    "autolinking": {
+      "searchPaths": [
+        "./modules",
+        "./node_modules"
+      ]
+    }
+  }
 }

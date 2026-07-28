@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { startRecording } from "recorder";
+import { startRecording } from "@/modules/recorder";
 
 const INTERVAL_MS: Record<string, number> = {
   "5s": 5_000,

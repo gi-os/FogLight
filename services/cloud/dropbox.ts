@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system/legacy";
 import { Linking } from "react-native";
-import { fowValidate } from "recorder";
+import { fowValidate } from "@/modules/recorder";
 import { decodeTileFilename } from "@/utils/fog/fowMath";
 
 /**

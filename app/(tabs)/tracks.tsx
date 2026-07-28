@@ -8,7 +8,7 @@ import {
   isConnected,
   listImported,
 } from "@/services/cloud/dropbox";
-import { fowInspect, fowRenderTile } from "recorder";
+import { fowInspect, fowRenderTile } from "@/modules/recorder";
 import * as FileSystem from "expo-file-system/legacy";
 import { fowDir, fowDirPath } from "@/services/cloud/dropbox";
 import { scanFowTiles } from "@/utils/fog/fowSource";

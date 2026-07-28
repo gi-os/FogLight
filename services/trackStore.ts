@@ -1,5 +1,5 @@
 import * as FileSystem from "expo-file-system/legacy";
-import { tracksDir } from "recorder";
+import { tracksDir } from "@/modules/recorder";
 
 export type TrackPoint = {
   ts: number;

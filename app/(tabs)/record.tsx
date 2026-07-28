@@ -1,7 +1,7 @@
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { PermissionsAndroid } from "react-native";
-import { startRecording, stopRecording } from "recorder";
+import { startRecording, stopRecording } from "@/modules/recorder";
 import ContentContainer from "@/components/ContentContainer";
 import { OptionsSelector } from "@/components/OptionsSelector";
 import { StyledButton } from "@/components/StyledButton";
