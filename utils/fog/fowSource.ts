@@ -1,6 +1,11 @@
 import * as FileSystem from "expo-file-system/legacy";
 import { fowDir, fowDirPath } from "@/services/cloud/dropbox";
-import { decodeTileFilename, MAP_WIDTH, tileBounds } from "./fowMath";
+import {
+  CELLS_PER_TILE,
+  decodeTileFilename,
+  MAP_WIDTH,
+  tileBounds,
+} from "./fowMath";
 
 export type Corners = [
   GeoJSON.Position,
@@ -29,16 +34,20 @@ export async function scanFowTiles(): Promise<FowTile[]> {
       const x = id % MAP_WIDTH;
       const y = Math.floor(id / MAP_WIDTH);
       const [w, s, e, n] = tileBounds(x, y);
+      // Inflate by ~1 cell so adjacent tile rasters overlap slightly —
+      // hides the hairline seams GPU edge-sampling leaves between tiles.
+      const padX = (e - w) / CELLS_PER_TILE;
+      const padY = (n - s) / CELLS_PER_TILE;
       tiles.push({
         id,
         x,
         y,
         path: `${fowDirPath()}/${name}`,
         corners: [
-          [w, n],
-          [e, n],
-          [e, s],
-          [w, s],
+          [w - padX, n + padY],
+          [e + padX, n + padY],
+          [e + padX, s - padY],
+          [w - padX, s - padY],
         ] as Corners,
       });
     }

@@ -90,10 +90,32 @@ class RecorderService : Service(), LocationListener {
   }
 
   override fun onLocationChanged(location: Location) {
+    if (inPrivacyZone(location)) return
     val file = File(RecorderModule.tracksDir(this), "${dayFormat.format(Date())}.csv")
     file.appendText(
       "${location.time},${location.latitude},${location.longitude},${location.accuracy}\n"
     )
+  }
+
+  /** True when the fix falls inside a configured home/work privacy zone. */
+  private fun inPrivacyZone(location: Location): Boolean {
+    val prefs = RecorderModule.prefs(this)
+    for (name in ZONE_NAMES) {
+      val raw = prefs.getString("zone_$name", null) ?: continue
+      val parts = raw.split(",")
+      if (parts.size < 3) continue
+      try {
+        val results = FloatArray(1)
+        Location.distanceBetween(
+          location.latitude, location.longitude,
+          parts[0].toDouble(), parts[1].toDouble(), results,
+        )
+        if (results[0] <= parts[2].toFloat()) return true
+      } catch (_: NumberFormatException) {
+        // malformed zone; ignore
+      }
+    }
+    return false
   }
 
   @Deprecated("Deprecated in API 29, still required for older targets")
@@ -139,5 +161,6 @@ class RecorderService : Service(), LocationListener {
     const val CHANNEL_ID = "lightfog_recording"
     const val NOTIFICATION_ID = 4207
     const val MIN_DISTANCE_M = 5f
+    val ZONE_NAMES = listOf("home", "work")
   }
 }

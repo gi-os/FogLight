@@ -185,10 +185,22 @@ object FowCodec {
         // lines stay bold instead of dropping below a coverage threshold.
         for (i in frac.indices) frac[i] = if (frac[i] > 0) 255 else 0
         if (style == STYLE_PIXEL2X) {
-          // Scale4x: EPX applied twice — rounder curves than a single pass.
+          // Depixel: Scale4x (EPX twice), then a small blur + steep contrast
+          // ramp — corners melt into curves with anti-aliased edges while
+          // faces stay flat, like emulator depixelizing filters.
           val quad = scale2x(scale2x(frac, sizePx, sizePx), sizePx * 2, sizePx * 2)
-          bmp = Bitmap.createBitmap(sizePx * 4, sizePx * 4, Bitmap.Config.ARGB_8888)
-          bmp.setPixels(colorize(quad, color), 0, sizePx * 4, 0, 0, sizePx * 4, sizePx * 4)
+          val q = sizePx * 4
+          blurGrid(quad, q, q, radius = 2)
+          for (i in quad.indices) {
+            val v = quad[i]
+            quad[i] = when {
+              v <= 96 -> 0
+              v >= 160 -> 255
+              else -> ((v - 96) * 255) / 64
+            }
+          }
+          bmp = Bitmap.createBitmap(q, q, Bitmap.Config.ARGB_8888)
+          bmp.setPixels(colorize(quad, color), 0, q, 0, 0, q, q)
         } else {
           bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
           bmp.setPixels(colorize(frac, color), 0, sizePx, 0, 0, sizePx, sizePx)

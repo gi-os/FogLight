@@ -71,3 +71,17 @@ export async function fowInspect(path: string): Promise<string> {
 export function setGrayscale(enabled: boolean): void {
   RecorderModule?.setGrayscale(enabled);
 }
+
+/** Suppress recording within radiusM of this point (e.g. home/work). */
+export function setPrivacyZone(
+  name: "home" | "work",
+  lat: number,
+  lng: number,
+  radiusM = 500
+): void {
+  RecorderModule?.setPrivacyZone(name, lat, lng, radiusM);
+}
+
+export function clearPrivacyZone(name: "home" | "work"): void {
+  RecorderModule?.clearPrivacyZone(name);
+}

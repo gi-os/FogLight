@@ -77,6 +77,8 @@ export default function MapScreen() {
     { key: string; uri: string; corners: Corners }[]
   >([]);
   const renderedRef = useRef<Map<string, string>>(new Map());
+  const prevCenterRef = useRef<[number, number] | null>(null);
+  const staggerRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [fogDebug, setFogDebug] = useState("");
   const [fogDensity, setFogDensity] = useState(DEFAULT_DENSITY);
   const [debugEnabled, setDebugEnabled] = useState(false);
@@ -230,7 +232,38 @@ export default function MapScreen() {
             next.push({ key, uri, corners: tile.corners });
           }
           if (!cancelled) {
-            setTileImages(next);
+            const origin = prevCenterRef.current ?? [
+              (ne[0] + sw[0]) / 2,
+              (ne[1] + sw[1]) / 2,
+            ];
+            prevCenterRef.current = [(ne[0] + sw[0]) / 2, (ne[1] + sw[1]) / 2];
+            setTileImages((current) => {
+              const currentKeys = new Set(current.map((t) => t.key));
+              const kept = next.filter((t) => currentKeys.has(t.key));
+              const fresh = next
+                .filter((t) => !currentKeys.has(t.key))
+                .sort((a, b) => {
+                  const da =
+                    (a.corners[0][0] - origin[0]) ** 2 +
+                    (a.corners[0][1] - origin[1]) ** 2;
+                  const db =
+                    (b.corners[0][0] - origin[0]) ** 2 +
+                    (b.corners[0][1] - origin[1]) ** 2;
+                  return da - db;
+                });
+              // Directional reveal: closest-to-previous-view first, then sweep.
+              for (const t of staggerRef.current) clearTimeout(t);
+              staggerRef.current = fresh.slice(1).map((tile, i) =>
+                setTimeout(() => {
+                  if (!cancelled) {
+                    setTileImages((cur) =>
+                      cur.some((c) => c.key === tile.key) ? cur : [...cur, tile]
+                    );
+                  }
+                }, 140 * (i + 1))
+              );
+              return fresh.length > 0 ? [...kept, fresh[0]] : kept;
+            });
             setFogDebug(
               `z${zoom.toFixed(1)} ${next.length}/${needed.length} fog imgs @${sizePx}` +
                 (failed ? ` (${failed} failed)` : "")
@@ -338,6 +371,7 @@ export default function MapScreen() {
         if (watchId != null) Geolocation.clearWatch(watchId);
         if (pollId != null) clearInterval(pollId);
         clearInterval(fogPollId);
+        for (const t of staggerRef.current) clearTimeout(t);
       };
     }, [lightBase, fogColor, fogStyle, blurRadius])
   );
@@ -408,7 +442,7 @@ export default function MapScreen() {
               id="fow-overview-layer"
               style={{
                 rasterOpacity: OVERVIEW_OPACITY as unknown as number,
-                rasterFadeDuration: 300,
+                rasterFadeDuration: 600,
               }}
             />
           </ImageSource>
@@ -436,7 +470,7 @@ export default function MapScreen() {
               id={`${img.key}-layer`}
               style={{
                 rasterOpacity: TILE_OPACITY as unknown as number,
-                rasterFadeDuration: 300,
+                rasterFadeDuration: 600,
                 ...(fogStyle === 1 || fogStyle === 2
                   ? { rasterResampling: "nearest" as const }
                   : {}),

@@ -1,4 +1,7 @@
+import Geolocation from "@react-native-community/geolocation";
 import Constants from "expo-constants";
+import { PermissionsAndroid } from "react-native";
+import { clearPrivacyZone, setPrivacyZone } from "@/modules/recorder";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import ContentContainer from "@/components/ContentContainer";
@@ -39,6 +42,9 @@ export default function SettingsScreen() {
   const [fogBlurRadius, setFogBlurRadius] = usePersistedState("fogBlurRadius", 1);
   const [lightMap, setLightMap] = usePersistedState("lightMap", false);
   const [fogColorName, setFogColorName] = usePersistedState("fogColorName", "black");
+  const [zoneHome, setZoneHome] = usePersistedState<string | null>("zoneHome", null);
+  const [zoneWork, setZoneWork] = usePersistedState<string | null>("zoneWork", null);
+  const [zoneStatus, setZoneStatus] = useState<string | null>(null);
   const [appKey, setAppKeyState] = useState("");
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -52,6 +58,31 @@ export default function SettingsScreen() {
       setStatus(null);
     }, [])
   );
+
+  const setZoneHere = async (name: "home" | "work") => {
+    const fine = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+    );
+    if (fine !== PermissionsAndroid.RESULTS.GRANTED) return;
+    setZoneStatus(`Getting location for ${name}…`);
+    Geolocation.getCurrentPosition(
+      (pos) => {
+        setPrivacyZone(name, pos.coords.latitude, pos.coords.longitude, 500);
+        const label = `${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`;
+        if (name === "home") setZoneHome(label);
+        else setZoneWork(label);
+        setZoneStatus(null);
+      },
+      () => setZoneStatus("Could not get a GPS fix — try outside."),
+      { enableHighAccuracy: true, timeout: 30_000 }
+    );
+  };
+
+  const clearZone = (name: "home" | "work") => {
+    clearPrivacyZone(name);
+    if (name === "home") setZoneHome(null);
+    else setZoneWork(null);
+  };
 
   const connect = async () => {
     try {
@@ -137,6 +168,24 @@ export default function SettingsScreen() {
         onValueChange={setFogDebugOn}
         value={fogDebugOn}
       />
+
+      <StyledText style={{ fontSize: n(16), marginTop: n(24), marginBottom: n(8) }}>
+        PRIVACY ZONES
+      </StyledText>
+      <StyledText style={{ fontSize: n(12), opacity: 0.6, marginBottom: n(8) }}>
+        Recording pauses within 500m of these spots.
+      </StyledText>
+      <StyledButton
+        onPress={() => (zoneHome ? clearZone("home") : setZoneHere("home"))}
+        text={zoneHome ? `Clear Home (${zoneHome})` : "Set Home to Current Location"}
+      />
+      <StyledButton
+        onPress={() => (zoneWork ? clearZone("work") : setZoneHere("work"))}
+        text={zoneWork ? `Clear Work (${zoneWork})` : "Set Work to Current Location"}
+      />
+      {zoneStatus && (
+        <StyledText style={{ fontSize: n(13), marginTop: n(8) }}>{zoneStatus}</StyledText>
+      )}
 
       <StyledText style={{ fontSize: n(16), marginTop: n(24), marginBottom: n(8) }}>
         DROPBOX

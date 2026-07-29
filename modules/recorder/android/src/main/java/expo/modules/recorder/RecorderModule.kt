@@ -44,6 +44,19 @@ class RecorderModule : Module() {
       RecorderService.isServiceRunning
     }
 
+    // Privacy zones: recording is suppressed within radiusM of these points.
+    Function("setPrivacyZone") { name: String, lat: Double, lng: Double, radiusM: Double ->
+      val context = appContext.reactContext ?: return@Function null
+      prefs(context).edit().putString("zone_$name", "$lat,$lng,$radiusM").apply()
+      null
+    }
+
+    Function("clearPrivacyZone") { name: String ->
+      val context = appContext.reactContext ?: return@Function null
+      prefs(context).edit().remove("zone_$name").apply()
+      null
+    }
+
     Function("tracksDir") {
       val context = appContext.reactContext ?: return@Function null
       tracksDir(context).absolutePath
