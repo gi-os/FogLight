@@ -110,6 +110,25 @@ object FowCodec {
     return sb.toString()
   }
 
+  /** Full decode preserving each block's 515 bytes (bitmap + extra). */
+  fun decodeTileWithExtra(file: File): LinkedHashMap<Pair<Int, Int>, ByteArray>? {
+    val data = inflate(file) ?: return null
+    if (data.size < TILE_HEADER_SIZE) return null
+    val header = ByteBuffer.wrap(data, 0, TILE_HEADER_SIZE)
+      .order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+    val blocks = LinkedHashMap<Pair<Int, Int>, ByteArray>()
+    for (i in 0 until TILE_HEADER_LEN) {
+      val idx = header.get(i).toInt() and 0xFFFF
+      if (idx > 0) {
+        val start = TILE_HEADER_SIZE + (idx - 1) * BLOCK_SIZE
+        if (start + BLOCK_SIZE > data.size) continue
+        blocks[Pair(i % TILE_WIDTH, i / TILE_WIDTH)] =
+          data.copyOfRange(start, start + BLOCK_SIZE)
+      }
+    }
+    return blocks
+  }
+
   /**
    * Rasterize one tile to a transparent PNG (visited cells -> color).
    * sizePx must keep cells-per-pixel a multiple of 8 (use 1024, 512 or 256).

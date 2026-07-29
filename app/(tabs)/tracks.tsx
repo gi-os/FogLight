@@ -8,7 +8,7 @@ import {
   isConnected,
   listImported,
 } from "@/services/cloud/dropbox";
-import { fowInspect, fowRenderTile } from "@/modules/recorder";
+import { fowConvertNow, fowInspect, fowRenderTile, tileSyncReport } from "@/modules/recorder";
 import * as FileSystem from "expo-file-system/legacy";
 import { fowDir, fowDirPath } from "@/services/cloud/dropbox";
 import { scanFowTiles } from "@/utils/fog/fowSource";
@@ -23,6 +23,8 @@ export default function TracksScreen() {
   const [connected, setConnected] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [convertStatus, setConvertStatus] = useState<string | null>(null);
+  const [converting, setConverting] = useState(false);
 
   const refresh = useCallback(async () => {
     const days = await listDays();
@@ -38,6 +40,8 @@ export default function TracksScreen() {
     setRows(built);
     setImported(await listImported());
     setConnected(await isConnected());
+    const report = tileSyncReport();
+    if (report) setConvertStatus(`Last sync — ${report}`);
   }, []);
 
   useFocusEffect(
@@ -107,6 +111,29 @@ export default function TracksScreen() {
       {importStatus && (
         <StyledText style={{ fontSize: n(13), marginTop: n(8) }}>
           {importStatus}
+        </StyledText>
+      )}
+      {connected && (
+        <StyledButton
+          onPress={
+            converting
+              ? undefined
+              : async () => {
+                  setConverting(true);
+                  setConvertStatus("Converting tracks to tiles…");
+                  try {
+                    setConvertStatus(await fowConvertNow());
+                  } finally {
+                    setConverting(false);
+                  }
+                }
+          }
+          text={converting ? "Converting…" : "Convert & Upload Tiles Now"}
+        />
+      )}
+      {convertStatus && (
+        <StyledText style={{ fontSize: n(13), marginTop: n(8) }}>
+          {convertStatus}
         </StyledText>
       )}
 

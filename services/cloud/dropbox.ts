@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system/legacy";
 import { Linking } from "react-native";
-import { fowValidate } from "@/modules/recorder";
+import { fowValidate, setDropboxCreds } from "@/modules/recorder";
 import { decodeTileFilename } from "@/utils/fog/fowMath";
 
 /**
@@ -96,6 +96,7 @@ export async function finishAuth(code: string): Promise<void> {
   };
   await AsyncStorage.setItem(KEY_AUTH, JSON.stringify(auth));
   await AsyncStorage.removeItem(KEY_VERIFIER);
+  if (appKey) setDropboxCreds(appKey, auth.refreshToken);
 }
 
 async function getAccessToken(): Promise<string> {
@@ -205,6 +206,28 @@ export async function importNewGpx(): Promise<ImportResult> {
   );
   const localGpx = new Set(await FileSystem.readDirectoryAsync(importsDir()));
   const localFow = new Set(await FileSystem.readDirectoryAsync(fowDir()));
+
+  // Manifest of Dropbox paths so the nightly sync uploads tiles back where
+  // they came from. Also refresh native creds.
+  try {
+    const manifest: Record<string, string> = {};
+    for (const entry of remote) {
+      if (!entry.name.toLowerCase().endsWith(".gpx") && decodeTileFilename(entry.name) != null) {
+        manifest[entry.name] = entry.path_lower;
+      }
+    }
+    await FileSystem.writeAsStringAsync(
+      `${fowDir()}/_paths.json`,
+      JSON.stringify(manifest)
+    );
+    const appKey = await getAppKey();
+    const rawAuth = await AsyncStorage.getItem(KEY_AUTH);
+    if (appKey && rawAuth) {
+      setDropboxCreds(appKey, (JSON.parse(rawAuth) as Auth).refreshToken);
+    }
+  } catch {
+    // manifest is best-effort
+  }
 
   const result: ImportResult = {
     gpxAdded: 0,

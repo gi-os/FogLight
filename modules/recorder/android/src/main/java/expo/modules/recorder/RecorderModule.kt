@@ -44,6 +44,36 @@ class RecorderModule : Module() {
       RecorderService.isServiceRunning
     }
 
+    // Nightly tile sync (tracks -> FoW tiles -> Dropbox)
+    Function("setDropboxCreds") { appKey: String, refreshToken: String ->
+      val context = appContext.reactContext ?: return@Function null
+      prefs(context).edit()
+        .putString("dbxAppKey", appKey)
+        .putString("dbxRefreshToken", refreshToken)
+        .apply()
+      null
+    }
+
+    Function("setTileSync") { enabled: Boolean ->
+      val context = appContext.reactContext ?: return@Function null
+      prefs(context).edit().putBoolean("tileSyncEnabled", enabled).apply()
+      null
+    }
+
+    Function("tileSyncReport") {
+      val context = appContext.reactContext ?: return@Function ""
+      prefs(context).getString("tileSyncReport", "") ?: ""
+    }
+
+    AsyncFunction("fowConvertNow") {
+      val context = appContext.reactContext ?: return@AsyncFunction "no context"
+      try {
+        FowSync.run(context)
+      } catch (e: Exception) {
+        "failed — ${e.message}"
+      }
+    }
+
     // Privacy zones: recording is suppressed within radiusM of these points.
     Function("setPrivacyZone") { name: String, lat: Double, lng: Double, radiusM: Double ->
       val context = appContext.reactContext ?: return@Function null

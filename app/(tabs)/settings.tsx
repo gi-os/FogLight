@@ -1,7 +1,7 @@
 import Geolocation from "@react-native-community/geolocation";
 import Constants from "expo-constants";
 import { PermissionsAndroid } from "react-native";
-import { clearPrivacyZone, setPrivacyZone } from "@/modules/recorder";
+import { clearPrivacyZone, setPrivacyZone, setTileSync } from "@/modules/recorder";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import ContentContainer from "@/components/ContentContainer";
@@ -45,6 +45,7 @@ export default function SettingsScreen() {
   const [zoneHome, setZoneHome] = usePersistedState<string | null>("zoneHome", null);
   const [zoneWork, setZoneWork] = usePersistedState<string | null>("zoneWork", null);
   const [zoneStatus, setZoneStatus] = useState<string | null>(null);
+  const [tileSyncOn, setTileSyncOn] = usePersistedState("tileSyncEnabled", false);
   const [appKey, setAppKeyState] = useState("");
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -194,6 +195,18 @@ export default function SettingsScreen() {
         <>
           <StyledText style={{ fontSize: n(14), marginBottom: n(8) }}>
             Connected.
+          </StyledText>
+          <ToggleSwitch
+            label="Nightly Tile Sync"
+            onValueChange={(v: boolean) => {
+              setTileSyncOn(v);
+              setTileSync(v);
+            }}
+            value={tileSyncOn}
+          />
+          <StyledText style={{ fontSize: n(12), opacity: 0.6, marginBottom: n(8) }}>
+            Converts finished days into Fog of World tiles overnight (only
+            newly explored areas) and uploads them to Dropbox.
           </StyledText>
           <StyledButton onPress={doDisconnect} text="Disconnect Dropbox" />
         </>

@@ -85,3 +85,22 @@ export function setPrivacyZone(
 export function clearPrivacyZone(name: "home" | "work"): void {
   RecorderModule?.clearPrivacyZone(name);
 }
+
+/** Hand Dropbox credentials to the native nightly tile-sync. */
+export function setDropboxCreds(appKey: string, refreshToken: string): void {
+  RecorderModule?.setDropboxCreds(appKey, refreshToken);
+}
+
+/** Enable/disable the nightly tracks -> FoW tiles -> Dropbox sync. */
+export function setTileSync(enabled: boolean): void {
+  RecorderModule?.setTileSync(enabled);
+}
+
+export function tileSyncReport(): string {
+  return RecorderModule?.tileSyncReport() ?? "";
+}
+
+/** Convert completed days into FoW tiles and upload now. Returns a report. */
+export async function fowConvertNow(): Promise<string> {
+  return (await RecorderModule?.fowConvertNow()) ?? "native module missing";
+}

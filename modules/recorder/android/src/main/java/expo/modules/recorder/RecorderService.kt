@@ -30,6 +30,13 @@ class RecorderService : Service(), LocationListener {
 
   private var locationManager: LocationManager? = null
   private val dayFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+  private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+  private val nightlyCheck = object : Runnable {
+    override fun run() {
+      FowSync.runIfDue(this@RecorderService)
+      handler.postDelayed(this, 30L * 60L * 1000L)
+    }
+  }
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -46,10 +53,13 @@ class RecorderService : Service(), LocationListener {
     startAsForeground()
     startLocationUpdates()
     isServiceRunning = true
+    handler.removeCallbacks(nightlyCheck)
+    handler.postDelayed(nightlyCheck, 60L * 1000L)
     return START_STICKY
   }
 
   override fun onDestroy() {
+    handler.removeCallbacks(nightlyCheck)
     locationManager?.removeUpdates(this)
     isServiceRunning = false
     super.onDestroy()
