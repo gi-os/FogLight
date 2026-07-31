@@ -1,16 +1,22 @@
-name: Android App APK Build
+name: Verify APK build
+
+# Verification only: builds exactly what release.yml builds and publishes nothing.
+#
+# This used to call EAS, which needs an EXPO_TOKEN this repo doesn't set, so it
+# failed on every run and no branch could be checked before it became a release.
+# release.yml only triggers on main and publishes when it passes, which meant the
+# first real build of a change was also the release of it. Same steps here, minus
+# the publish, dispatchable on any branch.
 
 on:
   workflow_dispatch:
+  pull_request:
 
 jobs:
-  build:
+  verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Setup repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@v4
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -20,58 +26,41 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
+          distribution: temurin
           java-version: '17'
-          distribution: 'temurin'
-          cache: 'gradle'
 
-      - name: Setup Android SDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Setup Expo
-        uses: expo/expo-github-action@v8
-        with:
-          expo-version: latest
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-
-      - name: Get app info from app.json
-        id: get_app_info
-        run: |
-          VERSION=$(node -p "require('./app.json').expo.version")
-          APP_NAME=$(node -p "require('./app.json').expo.slug")
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "APP_NAME=$APP_NAME" >> $GITHUB_ENV
-
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install
 
-      - name: Build Android app
-        run: eas build --platform android --profile production --local --output ${{ github.workspace }}/${{ env.APP_NAME }}_${{ env.VERSION }}.apk
+      - name: Typecheck
+        run: bunx tsc --noEmit
 
-      - name: Upload APK artifact
+      - name: Prebuild android project
+        run: bunx expo prebuild --platform android --no-install
+
+      # The manifest merge is where a foreground-service permission goes missing, and a
+      # missing one is a SecurityException at startForeground rather than a build failure —
+      # so it is worth asserting here, where it costs nothing, instead of at 7am.
+      - name: Assert foreground-service permissions survived the merge
+        run: |
+          M=android/app/src/main/AndroidManifest.xml
+          for p in FOREGROUND_SERVICE FOREGROUND_SERVICE_LOCATION ACCESS_FINE_LOCATION; do
+            grep -q "android.permission.$p" "$M" \
+              || { echo "::error::$p missing from the merged manifest"; exit 1; }
+          done
+          grep -q 'foregroundServiceType="location"' "$M" \
+            || echo "::warning::RecorderService is not typed location in the merged manifest"
+
+      - name: Build release APK
+        working-directory: android
+        run: ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
-          path: ${{ github.workspace }}/${{ env.APP_NAME }}_${{ env.VERSION }}.apk
-
-      - name: Generate changelog
-        id: changelog
-        run: |
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -z "$PREVIOUS_TAG" ]; then
-            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges)
-          else
-            CHANGELOG=$(git log ${PREVIOUS_TAG}..HEAD --pretty=format:"- %s" --no-merges)
-          fi
-          echo "CHANGELOG<<EOF" >> $GITHUB_ENV
-          echo "$CHANGELOG" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-
-      - name: Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ github.workspace }}/${{ env.APP_NAME }}_${{ env.VERSION }}.apk
-          tag_name: v${{ env.VERSION }}
-          body: |
-            ## What's Changed
-            ${{ env.CHANGELOG }}
+          name: LightFog-unreleased-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
