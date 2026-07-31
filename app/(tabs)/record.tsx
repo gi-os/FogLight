@@ -1,7 +1,7 @@
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { PermissionsAndroid } from "react-native";
-import { startRecording, stopRecording } from "@/modules/recorder";
+import { recordingError, startRecording, stopRecording } from "@/modules/recorder";
 import ContentContainer from "@/components/ContentContainer";
 import { StyledButton } from "@/components/StyledButton";
 import { StyledText } from "@/components/StyledText";
@@ -22,18 +22,26 @@ export default function RecordScreen() {
   const [recordOn, setRecordOn] = usePersistedState("recordingOn", false);
   const [interval, setIntervalPref] = usePersistedState("recordInterval", "10s");
   const [pointsToday, setPointsToday] = useState(0);
+  const [problem, setProblem] = useState<string | null>(null);
 
-  // Whenever intent is on (including after app restart), ensure the
-  // service is running. startRecording is idempotent.
+  // Whenever intent is on (including after app restart), ensure the service is running — and take
+  // no for an answer. A refusal is shown rather than retried: the native side only refuses for
+  // reasons another attempt won't change, and a UI that keeps asking is what turned one failed
+  // start into hundreds.
   useEffect(() => {
-    if (recordOn) {
-      startRecording(INTERVAL_MS[interval] ?? 10_000);
+    if (!recordOn) {
+      setProblem(null);
+      return;
     }
+    setProblem(startRecording(INTERVAL_MS[interval] ?? 10_000));
   }, [recordOn, interval]);
 
   useFocusEffect(
     useCallback(() => {
       readDay(todayKey()).then((pts) => setPointsToday(pts.length));
+      // The service may have stood down while we were away — it says why, and it survives the app
+      // being killed, so this is the one place the reason can actually be read.
+      setProblem((current) => current ?? recordingError());
     }, [])
   );
 
@@ -46,12 +54,18 @@ export default function RecordScreen() {
     const fine = await PermissionsAndroid.request(
       PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
     );
-    if (fine !== PermissionsAndroid.RESULTS.GRANTED) return;
+    if (fine !== PermissionsAndroid.RESULTS.GRANTED) {
+      setProblem("Location permission is needed to record.");
+      return;
+    }
     await PermissionsAndroid.request(
       PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
     ).catch(() => undefined);
-    startRecording(INTERVAL_MS[interval] ?? 10_000);
-    await setRecordOn(true);
+    const refused = startRecording(INTERVAL_MS[interval] ?? 10_000);
+    setProblem(refused);
+    // Intent follows reality: leaving it on after a refusal is what makes every later launch try
+    // again, which is the loop.
+    if (!refused) await setRecordOn(true);
   };
 
   return (
@@ -60,6 +74,11 @@ export default function RecordScreen() {
         onPress={toggle}
         text={recordOn ? "Stop Recording" : "Start Recording"}
       />
+      {problem ? (
+        <StyledText style={{ fontSize: n(14), marginTop: n(12) }}>
+          {`Not recording — ${problem}`}
+        </StyledText>
+      ) : null}
       <StyledText style={{ fontSize: n(14), marginTop: n(16) }}>
         GPS Interval
       </StyledText>

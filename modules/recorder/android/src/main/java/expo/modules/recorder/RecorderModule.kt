@@ -1,8 +1,11 @@
 package expo.modules.recorder
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
+import androidx.core.content.ContextCompat
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
@@ -11,19 +14,56 @@ class RecorderModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("Recorder")
 
+    // Returns null on success, or a reason. Refusing here rather than letting the service find
+    // out is the difference between a message on screen and a process that dies on arrival:
+    // startForegroundService promises a foreground service within five seconds, and a service that
+    // throws instead of keeping that promise takes the app down with it.
     Function("start") { intervalMs: Int ->
-      val context = appContext.reactContext ?: return@Function null
+      val context = appContext.reactContext ?: return@Function "no context"
+      val fine = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_FINE_LOCATION,
+      )
+      val coarse = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_COARSE_LOCATION,
+      )
+      if (fine != PackageManager.PERMISSION_GRANTED &&
+        coarse != PackageManager.PERMISSION_GRANTED
+      ) {
+        prefs(context).edit()
+          .putBoolean(KEY_RUNNING, false)
+          .putString(KEY_LAST_ERROR, "location permission not granted")
+          .apply()
+        return@Function "location permission not granted"
+      }
       prefs(context).edit()
         .putBoolean(KEY_RUNNING, true)
         .putInt(KEY_INTERVAL, intervalMs)
+        .remove(KEY_LAST_ERROR)
         .apply()
       val intent = Intent(context, RecorderService::class.java)
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        context.startForegroundService(intent)
-      } else {
-        context.startService(intent)
+      val started = runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          context.startForegroundService(intent)
+        } else {
+          context.startService(intent)
+        }
+      }
+      if (started.isFailure) {
+        prefs(context).edit()
+          .putBoolean(KEY_RUNNING, false)
+          .putString(KEY_LAST_ERROR, "the system refused to start the service")
+          .apply()
+        return@Function "the system refused to start the service"
       }
       null
+    }
+
+    /** Why recording last stopped itself, or null. */
+    Function("lastError") {
+      val context = appContext.reactContext ?: return@Function null
+      prefs(context).getString(KEY_LAST_ERROR, null)
     }
 
     Function("stop") {
@@ -136,6 +176,9 @@ class RecorderModule : Module() {
     const val PREFS = "recorder"
     const val KEY_RUNNING = "running"
     const val KEY_INTERVAL = "intervalMs"
+
+    /** Why recording stopped itself, for the UI to explain rather than silently show "off". */
+    const val KEY_LAST_ERROR = "lastError"
 
     fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 

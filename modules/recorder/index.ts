@@ -2,9 +2,21 @@ import { requireOptionalNativeModule } from "expo-modules-core";
 
 const RecorderModule = requireOptionalNativeModule("Recorder");
 
-/** Start the foreground recording service. Interval in ms between GPS fixes. */
-export function startRecording(intervalMs = 10_000): void {
-  RecorderModule?.start(intervalMs);
+/**
+ * Start the foreground recording service. Interval in ms between GPS fixes.
+ *
+ * Returns null on success, or the reason it refused. It can refuse — the location permission may
+ * not be granted, or the system may decline a background start — and the caller needs to know,
+ * because the alternative is asking again. Retrying a start that cannot work is how this became a
+ * crash loop that filled the task stack with permission dialogs and took the phone's UI with it.
+ */
+export function startRecording(intervalMs = 10_000): string | null {
+  return RecorderModule?.start(intervalMs) ?? "recorder module unavailable";
+}
+
+/** Why recording last stopped itself, or null. Survives the app being killed. */
+export function recordingError(): string | null {
+  return RecorderModule?.lastError() ?? null;
 }
 
 export function stopRecording(): void {
@@ -19,11 +31,19 @@ export function isServiceAlive(): boolean {
   return RecorderModule?.isServiceAlive() ?? false;
 }
 
-/** If recording is enabled but the service died (OS kill), restart it. */
-export function ensureRunning(intervalMs = 10_000): void {
+/**
+ * If recording is enabled but the service died (OS kill), restart it — once.
+ *
+ * `isRecording` reads the native running flag, and the service clears that flag when it stands
+ * down, so a service that failed for a reason it cannot recover from is no longer "enabled" and
+ * this does nothing. That is the loop breaker: the flag is the handshake between a service that
+ * gave up and a caller that would otherwise keep asking.
+ */
+export function ensureRunning(intervalMs = 10_000): string | null {
   if (isRecording() && !isServiceAlive()) {
-    RecorderModule?.start(intervalMs);
+    return startRecording(intervalMs);
   }
+  return null;
 }
 
 /** Absolute path of the directory containing daily track CSVs (ts,lat,lng,acc). */

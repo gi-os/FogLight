@@ -129,10 +129,22 @@ export default function MapScreen() {
       let cancelled = false;
 
       (async () => {
-        const granted = await PermissionsAndroid.request(
+        // Check before asking. `request` on an already-granted permission is usually a no-op, but
+        // this screen is focused constantly and each ask that outlives its caller leaves a
+        // permission-dialog task behind — several hundred of them, once, which is enough to take
+        // the system UI down with it. Ask only when there is something to ask for.
+        const already = await PermissionsAndroid.check(
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
         );
-        if (granted !== PermissionsAndroid.RESULTS.GRANTED || cancelled) return;
+        if (cancelled) return;
+        if (!already) {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+          );
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED || cancelled) return;
+        }
+        // Recording can only be healed once location is actually ours to read.
+        healRecording();
         watchId = Geolocation.watchPosition(
           (pos) => {
             const c: [number, number] = [pos.coords.longitude, pos.coords.latitude];
@@ -277,7 +289,6 @@ export default function MapScreen() {
       const fogPollId = setInterval(pollFog, FOG_POLL_MS);
       pollFog();
 
-      healRecording();
       setGrayscale(false); // color while the map is open (no-op if not granted)
 
       AsyncStorage.getItem("fogDensity")

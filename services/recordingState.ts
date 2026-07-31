@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { PermissionsAndroid } from "react-native";
 import { startRecording } from "@/modules/recorder";
 
 const INTERVAL_MS: Record<string, number> = {
@@ -25,9 +26,22 @@ export async function getIntervalMs(): Promise<number> {
   }
 }
 
-/** If the user wants recording on, (re)start the service. Idempotent. */
-export async function healRecording(): Promise<void> {
-  if (await getRecordingOn()) {
-    startRecording(await getIntervalMs());
-  }
+/**
+ * If the user wants recording on, and it can work, (re)start the service.
+ *
+ * The permission is checked — `check`, never `request`; asking is the map screen's job and only
+ * once — because a location foreground service started without it used to throw out of
+ * `startForeground` and kill the process. This runs on every focus of the map tab, so "start
+ * something that will crash" and "run on every focus" were the two halves of a loop that restarted
+ * the app hundreds of times and left an orphaned permission dialog behind on each pass.
+ *
+ * Returns null if recording is on and running, or a reason it isn't.
+ */
+export async function healRecording(): Promise<string | null> {
+  if (!(await getRecordingOn())) return null;
+  const granted = await PermissionsAndroid.check(
+    PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+  );
+  if (!granted) return "location permission not granted";
+  return startRecording(await getIntervalMs());
 }

@@ -15,6 +15,7 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.content.ContextCompat
 import java.io.File
 import java.text.SimpleDateFormat
@@ -50,12 +51,60 @@ class RecorderService : Service(), LocationListener {
       stopSelf()
       return START_NOT_STICKY
     }
-    startAsForeground()
+    // Permission first, and this order is the whole fix.
+    //
+    // It used to go foreground and *then* check, which is exactly backwards: a location-typed
+    // foreground service started without the location permission throws SecurityException out of
+    // startForeground, so the process died before reaching the check that would have stopped it
+    // politely. START_STICKY then brought it back to do the same thing again — a crash loop that
+    // took the phone down with it, because every restart also queued another permission dialog and
+    // the task stack filled with hundreds of them.
+    if (!hasLocationPermission()) {
+      standDown("location permission not granted")
+      return START_NOT_STICKY
+    }
+    if (!startAsForeground()) {
+      standDown("foreground start refused")
+      return START_NOT_STICKY
+    }
     startLocationUpdates()
     isServiceRunning = true
     handler.removeCallbacks(nightlyCheck)
     handler.postDelayed(nightlyCheck, 60L * 1000L)
     return START_STICKY
+  }
+
+  /** Whether we may log a fix at all. Coarse is enough to be allowed the service type. */
+  private fun hasLocationPermission(): Boolean {
+    val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+    val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+    return fine == PackageManager.PERMISSION_GRANTED || coarse == PackageManager.PERMISSION_GRANTED
+  }
+
+  /**
+   * Give up, and give up in a way that stays given up.
+   *
+   * Clearing the running flag matters as much as stopping: it is what `BootReceiver` and every
+   * sticky restart consult, so leaving it set is how a service that cannot possibly work gets
+   * started again at every boot forever. The user turned recording on and it could not be done —
+   * the flag now says so, and the UI reads the same flag.
+   */
+  private fun standDown(reason: String) {
+    Log.w(TAG, "recorder standing down: $reason")
+    RecorderModule.prefs(this).edit()
+      .putBoolean(RecorderModule.KEY_RUNNING, false)
+      .putString(RecorderModule.KEY_LAST_ERROR, reason)
+      .apply()
+    isServiceRunning = false
+    runCatching {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        stopForeground(STOP_FOREGROUND_REMOVE)
+      } else {
+        @Suppress("DEPRECATION")
+        stopForeground(true)
+      }
+    }
+    stopSelf()
   }
 
   override fun onDestroy() {
@@ -65,13 +114,27 @@ class RecorderService : Service(), LocationListener {
     super.onDestroy()
   }
 
-  private fun startAsForeground() {
+  /**
+   * Go foreground, and never crash doing it.
+   *
+   * Three ways this throws, all of them survivable and none of them worth a dead process:
+   * SecurityException when the location permission or `FOREGROUND_SERVICE_LOCATION` is missing (14+
+   * validates the *type*, not just the call), ForegroundServiceStartNotAllowedException when the
+   * start came from the background outside an exemption (12+), and IllegalStateException on older
+   * timing edges. A logger that cannot log is a notification that should go away — not a phone that
+   * needs rebooting.
+   */
+  private fun startAsForeground(): Boolean = try {
     val notification = buildNotification()
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
       startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
     } else {
       startForeground(NOTIFICATION_ID, notification)
     }
+    true
+  } catch (t: Throwable) {
+    Log.w(TAG, "startForeground refused", t)
+    false
   }
 
   private fun startLocationUpdates() {
@@ -167,6 +230,7 @@ class RecorderService : Service(), LocationListener {
   }
 
   companion object {
+    private const val TAG = "RecorderService"
     @Volatile var isServiceRunning = false
     const val CHANNEL_ID = "lightfog_recording"
     const val NOTIFICATION_ID = 4207

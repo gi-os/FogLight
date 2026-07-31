@@ -42,6 +42,37 @@ LightFog (LP3)  <--read-only Sync/ tiles--  Fog of World cloud auto-sync
 - Shows fog diagnostics on the map and surfaces native errors instead of swallowing
   them.
 
+## The crash loop, and what it taught
+
+Worth writing down, because the failure was much larger than the bug.
+
+`RecorderService` went foreground *before* checking the location permission. On Android 14 a
+`location`-typed foreground service is validated against the permission at `startForeground`, so
+without the grant it threw `SecurityException` — out of `onStartCommand`, killing the process,
+before ever reaching the permission check a few lines below that would have stopped it politely.
+Then everything conspired to try again: `START_STICKY` brought the service back, `BootReceiver`
+restarted it at every boot, `healRecording()` ran on every focus of the map tab, and the map tab
+also called `PermissionsAndroid.request` on every focus. Each pass died with a permission dialog
+still open, orphaning its task.
+
+The phone was found with **367 live `com.android.permissioncontroller` tasks** and LightOS — the
+Light Phone's launcher, which runs as uid 1000 — dead. An alarm couldn't be turned off. The app
+that broke the phone was never in the foreground.
+
+Four rules came out of it, and they generalise past this app:
+
+- **Check the permission before going foreground, not after.** The typed-FGS check throws; it is
+  not a return value.
+- **`startForeground` never crashes the process.** Three things throw there — a missing permission,
+  a background start outside an exemption, older timing edges — and none of them are worth a dead
+  app. A logger that can't log takes its notification away.
+- **A component that gives up must clear the flag that restarts it.** The running flag is the
+  handshake between a service that stood down and every caller that would otherwise keep asking:
+  `BootReceiver`, sticky restarts, `ensureRunning`, the UI.
+- **Never retry what can't work.** `start` now returns a reason instead of nothing, callers show it
+  instead of calling again, and the permission is `check`ed everywhere except the one screen whose
+  job is to ask.
+
 ## Install
 
 Download the APK from
