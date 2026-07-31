@@ -14,5 +14,15 @@
         <action android:name="android.intent.action.BOOT_COMPLETED" />
       </intent-filter>
     </receiver>
+    <!--
+      Where you were, for the rest of the collection. Read-only, one row per stay, by day.
+      Stays rather than fixes or tiles: a tile says which square of the world you crossed, and a
+      journal wants the places you stopped. Privacy zones never reach the disk, so they cannot be
+      served. See StaysProvider.
+    -->
+    <provider
+      android:name="expo.modules.recorder.StaysProvider"
+      android:authorities="com.gios.lightfog.stays"
+      android:exported="true" />
   </application>
 </manifest>
