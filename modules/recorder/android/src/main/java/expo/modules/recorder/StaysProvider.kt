@@ -1,6 +1,7 @@
 package expo.modules.recorder
 
 import android.content.ContentProvider
+import android.content.Context
 import android.content.ContentValues
 import android.database.Cursor
 import android.database.MatrixCursor
