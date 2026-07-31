@@ -121,6 +121,33 @@ class RecorderModule : Module() {
       null
     }
 
+    // Privacy *networks*: the primary signal, because a GPS fix indoors teleports and a network name
+    // does not. Marks whichever Wi-Fi you are connected to now as home or work.
+    Function("setPrivacyNetwork") { name: String ->
+      val context = appContext.reactContext ?: return@Function null
+      val ssid = currentSsid(context) ?: return@Function null
+      prefs(context).edit().putString("net_$name", ssid).apply()
+      ssid
+    }
+
+    Function("clearPrivacyNetwork") { name: String ->
+      val context = appContext.reactContext ?: return@Function null
+      prefs(context).edit().remove("net_$name").apply()
+      null
+    }
+
+    /** The network saved for a zone, so the settings screen can show what it will match. */
+    Function("privacyNetwork") { name: String ->
+      val context = appContext.reactContext ?: return@Function null
+      prefs(context).getString("net_$name", null)
+    }
+
+    /** What you are connected to right now, or null when Android will not say. */
+    Function("currentNetwork") {
+      val context = appContext.reactContext ?: return@Function null
+      currentSsid(context)
+    }
+
     Function("clearPrivacyZone") { name: String ->
       val context = appContext.reactContext ?: return@Function null
       prefs(context).edit().remove("zone_$name").apply()
@@ -181,6 +208,20 @@ class RecorderModule : Module() {
     const val KEY_LAST_ERROR = "lastError"
 
     fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /**
+     * The Wi-Fi network's name, or null.
+     *
+     * Quoted by Android, and `<unknown ssid>` when it refuses — no location permission, or location
+     * switched off. Both are null here rather than a network literally called `<unknown ssid>`, which
+     * would otherwise be saved as a zone and match every time Android declined to answer.
+     */
+    fun currentSsid(context: Context): String? = runCatching {
+      val wifi = context.getSystemService(android.net.wifi.WifiManager::class.java) ?: return null
+      @Suppress("DEPRECATION")
+      val raw = wifi.connectionInfo?.ssid ?: return null
+      raw.trim('"').takeIf { it.isNotBlank() && it != RecorderService.UNKNOWN_SSID }
+    }.getOrNull()
 
     fun tracksDir(context: Context): File =
       File(context.filesDir, "tracks").apply { mkdirs() }

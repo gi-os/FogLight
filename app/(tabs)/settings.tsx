@@ -1,7 +1,13 @@
 import Geolocation from "@react-native-community/geolocation";
 import Constants from "expo-constants";
 import { PermissionsAndroid } from "react-native";
-import { clearPrivacyZone, setPrivacyZone, setTileSync } from "@/modules/recorder";
+import {
+  clearPrivacyNetwork,
+  clearPrivacyZone,
+  setPrivacyNetwork,
+  setPrivacyZone,
+  setTileSync,
+} from "@/modules/recorder";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import ContentContainer from "@/components/ContentContainer";
@@ -42,6 +48,8 @@ export default function SettingsScreen() {
   const [fogBlurRadius, setFogBlurRadius] = usePersistedState("fogBlurRadius", 1);
   const [lightMap, setLightMap] = usePersistedState("lightMap", false);
   const [fogColorName, setFogColorName] = usePersistedState("fogColorName", "black");
+  const [netHome, setNetHome] = usePersistedState<string | null>("netHome", null);
+  const [netWork, setNetWork] = usePersistedState<string | null>("netWork", null);
   const [zoneHome, setZoneHome] = usePersistedState<string | null>("zoneHome", null);
   const [zoneWork, setZoneWork] = usePersistedState<string | null>("zoneWork", null);
   const [zoneStatus, setZoneStatus] = useState<string | null>(null);
@@ -59,6 +67,30 @@ export default function SettingsScreen() {
       setStatus(null);
     }, [])
   );
+
+  /**
+   * Mark the Wi-Fi you are on as home or work.
+   *
+   * The primary way a zone is matched now. The coordinate version below is kept as a backstop, so
+   * turning Wi-Fi off cannot quietly start recording your address — but this is the one that works
+   * indoors, where the GPS fix that "Set to Current Location" needs is exactly what you do not have.
+   */
+  const setZoneNetwork = (name: "home" | "work") => {
+    const ssid = setPrivacyNetwork(name);
+    if (!ssid) {
+      setZoneStatus("Android would not name the network — check location is on.");
+      return;
+    }
+    if (name === "home") setNetHome(ssid);
+    else setNetWork(ssid);
+    setZoneStatus(null);
+  };
+
+  const clearZoneNetwork = (name: "home" | "work") => {
+    clearPrivacyNetwork(name);
+    if (name === "home") setNetHome(null);
+    else setNetWork(null);
+  };
 
   const setZoneHere = async (name: "home" | "work") => {
     const fine = await PermissionsAndroid.request(
@@ -177,12 +209,20 @@ export default function SettingsScreen() {
         Recording pauses within 500m of these spots.
       </StyledText>
       <StyledButton
+        onPress={() => (netHome ? clearZoneNetwork("home") : setZoneNetwork("home"))}
+        text={netHome ? `Clear Home Wi-Fi (${netHome})` : "Set Home to This Wi-Fi"}
+      />
+      <SettingsRow
+        onPress={() => (netWork ? clearZoneNetwork("work") : setZoneNetwork("work"))}
+        text={netWork ? `Clear Work Wi-Fi (${netWork})` : "Set Work to This Wi-Fi"}
+      />
+      <SettingsRow
         onPress={() => (zoneHome ? clearZone("home") : setZoneHere("home"))}
-        text={zoneHome ? `Clear Home (${zoneHome})` : "Set Home to Current Location"}
+        text={zoneHome ? `Clear Home area (${zoneHome})` : "Also set Home area from GPS"}
       />
       <StyledButton
         onPress={() => (zoneWork ? clearZone("work") : setZoneHere("work"))}
-        text={zoneWork ? `Clear Work (${zoneWork})` : "Set Work to Current Location"}
+        text={zoneWork ? `Clear Work area (${zoneWork})` : "Also set Work area from GPS"}
       />
       {zoneStatus && (
         <StyledText style={{ fontSize: n(13), marginTop: n(8) }}>{zoneStatus}</StyledText>

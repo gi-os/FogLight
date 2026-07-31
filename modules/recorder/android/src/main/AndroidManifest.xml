@@ -2,6 +2,13 @@
   <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
     tools:ignore="ProtectedPermissions"
     xmlns:tools="http://schemas.android.com/tools" />
+  <!--
+    Reading the name of the Wi-Fi you are on, which is how a privacy zone is recognised. A GPS fix
+    indoors drifts or vanishes; a network name does not. Android also requires location permission
+    before it will name a network at all, which this app already holds.
+  -->
+  <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
   <application>
     <service
       android:name="expo.modules.recorder.RecorderService"

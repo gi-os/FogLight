@@ -68,6 +68,34 @@ export async function fowRenderTile(
   );
 }
 
+/**
+ * Mark the Wi-Fi you are on now as home or work, and return its name.
+ *
+ * The primary way a privacy zone is recognised. A GPS fix indoors drifts or vanishes, so a circle
+ * round your front door misses the arrival and then teleports you back out of it; the network you are
+ * connected to is exact and immediate. The coordinate zone stays as a backstop, so switching Wi-Fi
+ * off does not quietly start recording your address.
+ *
+ * Null when Android will not name the network — location permission missing, or location switched off.
+ */
+export function setPrivacyNetwork(name: "home" | "work"): string | null {
+  return RecorderModule?.setPrivacyNetwork(name) ?? null;
+}
+
+export function clearPrivacyNetwork(name: "home" | "work"): void {
+  RecorderModule?.clearPrivacyNetwork(name);
+}
+
+/** The network saved for a zone, so settings can show what it will match. */
+export function privacyNetwork(name: "home" | "work"): string | null {
+  return RecorderModule?.privacyNetwork(name) ?? null;
+}
+
+/** What you are connected to right now, or null when Android will not say. */
+export function currentNetwork(): string | null {
+  return RecorderModule?.currentNetwork() ?? null;
+}
+
 /** Rasterize a world overview PNG from a directory of FoW tile files. */
 export async function fowRenderOverview(
   dirPath: string,

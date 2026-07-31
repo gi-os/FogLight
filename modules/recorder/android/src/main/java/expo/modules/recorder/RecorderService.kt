@@ -11,6 +11,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.location.Location
+import android.net.wifi.WifiManager
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Build
@@ -210,12 +211,47 @@ class RecorderService : Service(), LocationListener {
   }
 
   /**
-   * Which named zone the fix falls inside, or null for anywhere else.
+   * Which named zone you are in, or null for anywhere else.
    *
-   * Was a boolean; it has to name the zone now so an arrival can be recorded without the
-   * coordinates. The comparison itself is unchanged.
+   * **The network first, the radius only as a backstop.** A GPS fix indoors drifts or disappears
+   * altogether, so a circle round your front door both misses the arrival and then teleports you out
+   * of it again a minute later — which is exactly what a privacy zone must never do. The name of the
+   * network you are connected to has none of that: it is exact, it is instant, and it is true the
+   * moment you walk in the door.
+   *
+   * The radius is kept rather than replaced, and deliberately. If it were removed, turning Wi-Fi off
+   * would quietly start writing your home address to the track — a privacy guarantee that can be
+   * disabled by a toggle in the status bar is not one. Either signal suppresses; both have to be
+   * absent to record.
    */
-  private fun zoneAt(location: Location): String? {
+  private fun zoneAt(location: Location): String? = networkZone() ?: radiusZone(location)
+
+  /**
+   * The zone whose network you are connected to.
+   *
+   * `WifiManager.connectionInfo` is deprecated and still the only way to read this from a service —
+   * the replacement, `NetworkCapabilities.transportInfo`, needs a callback registered against a
+   * network request, which is a lot of machinery to answer a question asked once per fix.
+   *
+   * Android quotes the SSID and returns `<unknown ssid>` when it will not say — no location
+   * permission, or location switched off entirely. Both come back as null here rather than as a
+   * network called `<unknown ssid>`, which would otherwise match a zone saved under that name.
+   */
+  private fun networkZone(): String? {
+    val ssid = currentSsid() ?: return null
+    val prefs = RecorderModule.prefs(this)
+    return ZONE_NAMES.firstOrNull { prefs.getString("net_$it", null) == ssid }
+  }
+
+  private fun currentSsid(): String? = runCatching {
+    val wifi = applicationContext.getSystemService(WifiManager::class.java) ?: return null
+    @Suppress("DEPRECATION")
+    val raw = wifi.connectionInfo?.ssid ?: return null
+    raw.trim('"').takeIf { it.isNotBlank() && it != UNKNOWN_SSID }
+  }.getOrNull()
+
+  /** The old test, unchanged: which zone's circle the fix falls inside. */
+  private fun radiusZone(location: Location): String? {
     val prefs = RecorderModule.prefs(this)
     for (name in ZONE_NAMES) {
       val raw = prefs.getString("zone_$name", null) ?: continue
@@ -283,5 +319,8 @@ class RecorderService : Service(), LocationListener {
 
     /** The zone the last fix was in, so a restart does not invent an arrival. */
     const val KEY_LAST_ZONE = "last_zone"
+
+    /** What Android says instead of a name when it will not tell you the network. */
+    const val UNKNOWN_SSID = "<unknown ssid>"
   }
 }
