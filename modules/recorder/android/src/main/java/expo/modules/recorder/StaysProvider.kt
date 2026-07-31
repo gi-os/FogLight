@@ -45,8 +45,10 @@ class StaysProvider : ContentProvider() {
 
         val fixes = runCatching { file.readLines().mapNotNull(Stays::parse) }.getOrDefault(emptyList())
         Stays.of(fixes).forEach { stay ->
+            // Explicitly Any?, or Kotlin infers the intersection of Long, Double and Int and
+            // warns about reifying it. A cursor row is a heterogeneous list by definition.
             cursor.addRow(
-                arrayOf(stay.startMs, stay.endMs, stay.latitude, stay.longitude, stay.fixes),
+                arrayOf<Any?>(stay.startMs, stay.endMs, stay.latitude, stay.longitude, stay.fixes),
             )
         }
         return cursor
