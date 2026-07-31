@@ -184,5 +184,15 @@ class RecorderModule : Module() {
 
     fun tracksDir(context: Context): File =
       File(context.filesDir, "tracks").apply { mkdirs() }
+
+    /**
+     * Where zone arrivals go — "went home", "went to work" — and nothing else.
+     *
+     * A separate directory from the track on purpose. The track holds coordinates and syncs out as
+     * tiles; this holds timestamps and a name, no position at all, and keeping them apart makes that
+     * difference structural rather than a rule someone has to remember.
+     */
+    fun zonesDir(context: Context): File =
+      File(context.filesDir, "zones").apply { mkdirs() }
   }
 }

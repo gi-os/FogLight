@@ -163,15 +163,59 @@ class RecorderService : Service(), LocationListener {
   }
 
   override fun onLocationChanged(location: Location) {
-    if (inPrivacyZone(location)) return
+    val zone = zoneAt(location)
+    if (zone != null) {
+      // **The fact, never the place.** A fix inside home or work still does not reach the track —
+      // that promise is why the zones exist, and the tiles that sync out depend on it. What is
+      // written instead is one line saying you arrived somewhere you had named, with no latitude
+      // and no longitude anywhere in it. "Went home at 19:40" locates you only if you already know
+      // where home is, which whoever reads this file already does.
+      noteZoneArrival(zone, location.time)
+      return
+    }
+    // Out of every zone: remember that, so coming back writes an arrival rather than being
+    // swallowed as "still there".
+    setLastZone(null)
     val file = File(RecorderModule.tracksDir(this), "${dayFormat.format(Date())}.csv")
     file.appendText(
       "${location.time},${location.latitude},${location.longitude},${location.accuracy}\n"
     )
   }
 
-  /** True when the fix falls inside a configured home/work privacy zone. */
-  private fun inPrivacyZone(location: Location): Boolean {
+  /**
+   * Note an arrival, once.
+   *
+   * **Only on a change of zone.** A phone sitting at home overnight produces hundreds of fixes and
+   * one arrival; writing a line per fix would be a file full of the same minute. The last zone is
+   * persisted rather than held in memory because this service is restarted by the system and by
+   * every reboot, and a fresh process seeing its first fix at home would otherwise invent an
+   * arrival for a place you had not moved from.
+   */
+  private fun noteZoneArrival(name: String, atMs: Long) {
+    if (lastZone() == name) return
+    setLastZone(name)
+    runCatching {
+      val dir = RecorderModule.zonesDir(this)
+      File(dir, "${dayFormat.format(Date(atMs))}.csv").appendText("$atMs,$name\n")
+    }
+  }
+
+  private fun lastZone(): String? =
+    RecorderModule.prefs(this).getString(KEY_LAST_ZONE, null)
+
+  private fun setLastZone(name: String?) {
+    RecorderModule.prefs(this).edit().apply {
+      if (name == null) remove(KEY_LAST_ZONE) else putString(KEY_LAST_ZONE, name)
+    }.apply()
+  }
+
+  /**
+   * Which named zone the fix falls inside, or null for anywhere else.
+   *
+   * Was a boolean; it has to name the zone now so an arrival can be recorded without the
+   * coordinates. The comparison itself is unchanged.
+   */
+  private fun zoneAt(location: Location): String? {
     val prefs = RecorderModule.prefs(this)
     for (name in ZONE_NAMES) {
       val raw = prefs.getString("zone_$name", null) ?: continue
@@ -183,12 +227,12 @@ class RecorderService : Service(), LocationListener {
           location.latitude, location.longitude,
           parts[0].toDouble(), parts[1].toDouble(), results,
         )
-        if (results[0] <= parts[2].toFloat()) return true
+        if (results[0] <= parts[2].toFloat()) return name
       } catch (_: NumberFormatException) {
         // malformed zone; ignore
       }
     }
-    return false
+    return null
   }
 
   @Deprecated("Deprecated in API 29, still required for older targets")
@@ -236,5 +280,8 @@ class RecorderService : Service(), LocationListener {
     const val NOTIFICATION_ID = 4207
     const val MIN_DISTANCE_M = 5f
     val ZONE_NAMES = listOf("home", "work")
+
+    /** The zone the last fix was in, so a restart does not invent an arrival. */
+    const val KEY_LAST_ZONE = "last_zone"
   }
 }
