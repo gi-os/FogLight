@@ -206,17 +206,17 @@ export default function SettingsScreen() {
         PRIVACY ZONES
       </StyledText>
       <StyledText style={{ fontSize: n(12), opacity: 0.6, marginBottom: n(8) }}>
-        Recording pauses within 500m of these spots.
+        Recording pauses on these networks, and within 500m of these spots.
       </StyledText>
       <StyledButton
         onPress={() => (netHome ? clearZoneNetwork("home") : setZoneNetwork("home"))}
         text={netHome ? `Clear Home Wi-Fi (${netHome})` : "Set Home to This Wi-Fi"}
       />
-      <SettingsRow
+      <StyledButton
         onPress={() => (netWork ? clearZoneNetwork("work") : setZoneNetwork("work"))}
         text={netWork ? `Clear Work Wi-Fi (${netWork})` : "Set Work to This Wi-Fi"}
       />
-      <SettingsRow
+      <StyledButton
         onPress={() => (zoneHome ? clearZone("home") : setZoneHere("home"))}
         text={zoneHome ? `Clear Home area (${zoneHome})` : "Also set Home area from GPS"}
       />
