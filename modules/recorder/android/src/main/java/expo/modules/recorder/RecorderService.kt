@@ -1,6 +1,7 @@
 package expo.modules.recorder
 
 import android.Manifest
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -10,7 +11,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.hardware.Sensor
+import android.hardware.SensorManager
+import android.hardware.TriggerEvent
+import android.hardware.TriggerEventListener
 import android.location.Location
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.location.LocationListener
 import android.location.LocationManager
@@ -27,6 +36,11 @@ import java.util.Locale
  * Foreground location-logging service (the gpslogger survival pattern:
  * typed foreground service + persistent notification). Appends fixes to
  * a crash-safe daily CSV: epochMs,lat,lng,accuracy
+ *
+ * **The radio is off whenever a fix would be thrown away.** Home and work were already excluded
+ * from the track, but the GPS was still asked for a position every ten seconds while the phone sat
+ * on a desk — bought and then discarded, all day. That was most of a battery. Now the zone check and
+ * a stillness check both stop the request instead of filtering the result; see [Power].
  */
 class RecorderService : Service(), LocationListener {
 
@@ -39,6 +53,16 @@ class RecorderService : Service(), LocationListener {
       handler.postDelayed(this, 30L * 60L * 1000L)
     }
   }
+
+  private var state = Power.State.ACTIVE
+  private var updatesRequested = false
+
+  /** The fix stillness is measured from, and when we arrived at it. Null until the first fix. */
+  private var anchor: Location? = null
+  private var anchorAtMs = 0L
+
+  private var networkCallback: ConnectivityManager.NetworkCallback? = null
+  private var motionListener: TriggerEventListener? = null
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -68,8 +92,19 @@ class RecorderService : Service(), LocationListener {
       standDown("foreground start refused")
       return START_NOT_STICKY
     }
-    startLocationUpdates()
     isServiceRunning = true
+
+    // A woken still-pause starts over: the phone is somewhere new, or on its way there, and either
+    // way the old anchor is not where it is. Clearing it here rather than trusting the trigger means
+    // a wake that arrived as a restarted process still counts.
+    if (intent?.action == ACTION_WAKE) {
+      anchor = null
+      anchorAtMs = 0L
+    }
+
+    watchNetworks()
+    applyPolicy("start")
+
     handler.removeCallbacks(nightlyCheck)
     handler.postDelayed(nightlyCheck, 60L * 1000L)
     return START_STICKY
@@ -110,8 +145,12 @@ class RecorderService : Service(), LocationListener {
 
   override fun onDestroy() {
     handler.removeCallbacks(nightlyCheck)
-    locationManager?.removeUpdates(this)
+    stopLocationUpdates()
+    disarmMotion()
+    cancelWatchdog()
+    unwatchNetworks()
     isServiceRunning = false
+    reportState(Power.State.ACTIVE)
     super.onDestroy()
   }
 
@@ -126,7 +165,7 @@ class RecorderService : Service(), LocationListener {
    * needs rebooting.
    */
   private fun startAsForeground(): Boolean = try {
-    val notification = buildNotification()
+    val notification = buildNotification(Power.State.ACTIVE, null)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
       startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
     } else {
@@ -137,6 +176,216 @@ class RecorderService : Service(), LocationListener {
     Log.w(TAG, "startForeground refused", t)
     false
   }
+
+  // --- power policy ---------------------------------------------------------
+
+  /**
+   * Work out what the recorder should be doing, and make it so.
+   *
+   * Called from everything that could change the answer — a start, a Wi-Fi change, a fix, a motion
+   * trigger, the watchdog — because each of those is a fact about whether a position is worth
+   * asking for, and none of them is a timer. That matters on a phone asleep: a `postDelayed` loop
+   * does not run in Doze, so a policy that re-evaluated on a schedule would be a policy that only
+   * worked while you were looking at it.
+   *
+   * Idempotent by state comparison, so the same answer arriving four ways costs nothing.
+   */
+  private fun applyPolicy(reason: String) {
+    val zone = pausingZone()
+    val gating = RecorderModule.prefs(this).getBoolean(RecorderModule.KEY_MOTION_GATING, true)
+    val next = Power.decide(
+      inZone = zone != null,
+      gating = gating,
+      canSenseMotion = motionSensor() != null,
+      stillFor = stillFor(),
+      stillAfterMs = stillAfterMs(),
+    )
+    if (next == state && (next == Power.State.ACTIVE) == updatesRequested) {
+      // Nothing to change — except that one zone can be entered directly from another, which is a
+      // new arrival with no change of state to announce it.
+      if (next == Power.State.PAUSED_ZONE && zone != null) {
+        noteZoneArrival(zone, System.currentTimeMillis())
+      }
+      return
+    }
+    Log.i(TAG, "policy: $state -> $next ($reason)")
+    state = next
+    when (next) {
+      Power.State.ACTIVE -> {
+        disarmMotion()
+        cancelWatchdog()
+        setLastZone(null)
+        startLocationUpdates()
+      }
+      Power.State.PAUSED_ZONE -> {
+        // **The arrival is written here, not from a fix.** With the radio off there will be no fix
+        // to notice it — and that is the point: the phone records that you went home without ever
+        // having asked where home is.
+        stopLocationUpdates()
+        disarmMotion()
+        cancelWatchdog()
+        // **Forget where you were stood.** Stillness is only knowable from fixes, and there will not
+        // be any: an anchor left behind here is eight hours old by the time the Wi-Fi drops, so
+        // walking out of the door would decide the phone had been still all night and switch the
+        // radio straight back off. A still pause keeps its anchor for exactly the opposite reason —
+        // it *is* what says the pause should continue.
+        anchor = null
+        anchorAtMs = 0L
+        zone?.let { noteZoneArrival(it, System.currentTimeMillis()) }
+      }
+      Power.State.PAUSED_STILL -> {
+        stopLocationUpdates()
+        armMotion()
+        armWatchdog()
+      }
+    }
+    updateNotification(next, zone)
+    reportState(next)
+  }
+
+  /**
+   * The zone that is allowed to turn the radio off: a named network, and only that.
+   *
+   * **A radius cannot pause the radio, and this is not an oversight.** Leaving a circle is something
+   * only a fix can tell you, so a radius pause could never end — the phone would stop recording at
+   * the first fix near home and stay stopped until something else woke it. A network drops on its
+   * own when you walk out of range, which is why it can be trusted to switch something off. The
+   * radius keeps doing the job it can do, filtering fixes in [zoneAt].
+   */
+  private fun pausingZone(): String? = networkZone()
+
+  /** How long fixes have stayed put, or null if the phone has moved or has no anchor yet. */
+  private fun stillFor(): Long? {
+    if (anchor == null || anchorAtMs == 0L) return null
+    return System.currentTimeMillis() - anchorAtMs
+  }
+
+  private fun stillAfterMs(): Long {
+    val minutes = RecorderModule.prefs(this)
+      .getInt(RecorderModule.KEY_STILL_AFTER_MIN, DEFAULT_STILL_AFTER_MIN)
+    return minutes.coerceAtLeast(1).toLong() * 60_000L
+  }
+
+  private fun motionSensor(): Sensor? = runCatching {
+    (getSystemService(Context.SENSOR_SERVICE) as? SensorManager)
+      ?.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION)
+  }.getOrNull()
+
+  /**
+   * Ask the hardware to tell us when the phone is carried somewhere.
+   *
+   * `TYPE_SIGNIFICANT_MOTION` runs in the sensor hub, not on the CPU, and costs a fraction of a
+   * milliamp against the tens a GPS fix costs — it is the whole reason a still pause is worth
+   * having. It is one-shot: the trigger is consumed when it fires and has to be asked for again,
+   * which is exactly what re-entering the pause does.
+   */
+  private fun armMotion() {
+    if (motionListener != null) return
+    val manager = getSystemService(Context.SENSOR_SERVICE) as? SensorManager ?: return
+    val sensor = manager.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION) ?: return
+    val listener = object : TriggerEventListener() {
+      override fun onTrigger(event: TriggerEvent?) {
+        motionListener = null // consumed by the framework, so forget it before re-arming anything
+        anchor = null
+        anchorAtMs = 0L
+        applyPolicy("motion")
+      }
+    }
+    if (runCatching { manager.requestTriggerSensor(listener, sensor) }.getOrDefault(false)) {
+      motionListener = listener
+    }
+  }
+
+  private fun disarmMotion() {
+    val listener = motionListener ?: return
+    motionListener = null
+    val manager = getSystemService(Context.SENSOR_SERVICE) as? SensorManager ?: return
+    val sensor = manager.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION) ?: return
+    runCatching { manager.cancelTriggerSensor(listener, sensor) }
+  }
+
+  /**
+   * The one thing that ends a still pause without a sensor.
+   *
+   * A one-shot trigger is a chain with no redundancy: consumed and lost to a process kill, or simply
+   * never fired by a phone carried smoothly in a bag, and recording is over without a symptom.
+   * `setAndAllowWhileIdle` is the only alarm that fires in Doze, and its inexactness is fine for an
+   * hourly "look again". Nothing re-arms it but the next pause, so a wake that finds the phone still
+   * moving does not leave an alarm behind.
+   */
+  private fun armWatchdog() {
+    val alarms = getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+    runCatching {
+      alarms.setAndAllowWhileIdle(
+        AlarmManager.RTC_WAKEUP,
+        System.currentTimeMillis() + Power.STILL_WATCHDOG_MS,
+        wakeIntent(),
+      )
+    }
+  }
+
+  private fun cancelWatchdog() {
+    val alarms = getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+    runCatching { alarms.cancel(wakeIntent()) }
+  }
+
+  /**
+   * The alarm's way back in — as a *foreground* service start, which is not a detail.
+   *
+   * `getService` would be a plain `startService`, and a plain background start of a service is
+   * refused on 26+ and throws in the framework's delivery of the alarm, where nothing of ours can
+   * catch it. The service is foreground when the alarm is armed, but it need not still be alive an
+   * hour later; `getForegroundService` is the form the alarm's temporary allowlist permits, and
+   * `onStartCommand` already goes foreground or stops, which is the promise it has to keep.
+   */
+  private fun wakeIntent(): PendingIntent {
+    val intent = Intent(this, RecorderService::class.java).setAction(ACTION_WAKE)
+    val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      PendingIntent.getForegroundService(this, WAKE_REQUEST, intent, flags)
+    } else {
+      PendingIntent.getService(this, WAKE_REQUEST, intent, flags)
+    }
+  }
+
+  /**
+   * Notice the Wi-Fi changing, because that is what ends a zone pause.
+   *
+   * A callback on a Wi-Fi network request rather than a poll: the pause has to end the moment you
+   * walk out of the door, and it has to end without the radio being on to notice. The SSID lags the
+   * callback by a moment — the network is available before it is named — so each event re-checks
+   * after a short delay as well as immediately.
+   */
+  private fun watchNetworks() {
+    if (networkCallback != null) return
+    val manager = getSystemService(ConnectivityManager::class.java) ?: return
+    val callback = object : ConnectivityManager.NetworkCallback() {
+      override fun onAvailable(network: Network) = recheck("wifi available")
+      override fun onLost(network: Network) = recheck("wifi lost")
+      override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) =
+        recheck("wifi changed")
+
+      private fun recheck(reason: String) {
+        handler.post { applyPolicy(reason) }
+        handler.postDelayed({ applyPolicy("$reason (settled)") }, SSID_SETTLE_MS)
+      }
+    }
+    val request = NetworkRequest.Builder()
+      .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+      .build()
+    if (runCatching { manager.registerNetworkCallback(request, callback) }.isSuccess) {
+      networkCallback = callback
+    }
+  }
+
+  private fun unwatchNetworks() {
+    val callback = networkCallback ?: return
+    networkCallback = null
+    val manager = getSystemService(ConnectivityManager::class.java) ?: return
+    runCatching { manager.unregisterNetworkCallback(callback) }
+  }
+
+  // --- location -------------------------------------------------------------
 
   private fun startLocationUpdates() {
     if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
@@ -157,13 +406,24 @@ class RecorderService : Service(), LocationListener {
         MIN_DISTANCE_M,
         this,
       )
+      updatesRequested = true
     } catch (_: IllegalArgumentException) {
       // GPS provider missing (emulator edge case)
       stopSelf()
+    } catch (_: SecurityException) {
+      standDown("location permission revoked")
     }
   }
 
+  /** Let go of the radio. The service stays foreground; only the fixes stop. */
+  private fun stopLocationUpdates() {
+    updatesRequested = false
+    runCatching { locationManager?.removeUpdates(this) }
+  }
+
   override fun onLocationChanged(location: Location) {
+    trackStillness(location)
+
     val zone = zoneAt(location)
     if (zone != null) {
       // **The fact, never the place.** A fix inside home or work still does not reach the track —
@@ -172,6 +432,7 @@ class RecorderService : Service(), LocationListener {
       // and no longitude anywhere in it. "Went home at 19:40" locates you only if you already know
       // where home is, which whoever reads this file already does.
       noteZoneArrival(zone, location.time)
+      applyPolicy("fix in zone")
       return
     }
     // Out of every zone: remember that, so coming back writes an arrival rather than being
@@ -181,6 +442,33 @@ class RecorderService : Service(), LocationListener {
     file.appendText(
       "${location.time},${location.latitude},${location.longitude},${location.accuracy}\n"
     )
+    applyPolicy("fix")
+  }
+
+  /**
+   * Keep the anchor a fix has to wander from before the phone counts as moving.
+   *
+   * Measured from a fixed anchor rather than from the previous fix on purpose. Consecutive fixes are
+   * always metres apart even on a desk, so "the last one was close" would call a walk down the
+   * street still; and a slow drift measured pairwise never accumulates. The anchor moves only when
+   * something genuinely left it, and its timestamp is what stillness is counted from.
+   */
+  private fun trackStillness(location: Location) {
+    val previous = anchor
+    if (previous == null) {
+      anchor = location
+      anchorAtMs = System.currentTimeMillis()
+      return
+    }
+    val results = FloatArray(1)
+    Location.distanceBetween(
+      previous.latitude, previous.longitude,
+      location.latitude, location.longitude, results,
+    )
+    if (!Power.stillAt(results[0].toDouble())) {
+      anchor = location
+      anchorAtMs = System.currentTimeMillis()
+    }
   }
 
   /**
@@ -208,6 +496,13 @@ class RecorderService : Service(), LocationListener {
     RecorderModule.prefs(this).edit().apply {
       if (name == null) remove(KEY_LAST_ZONE) else putString(KEY_LAST_ZONE, name)
     }.apply()
+  }
+
+  /** So the settings screen can say why the radio is off instead of looking broken. */
+  private fun reportState(next: Power.State) {
+    RecorderModule.prefs(this).edit()
+      .putString(RecorderModule.KEY_POWER_STATE, next.name)
+      .apply()
   }
 
   /**
@@ -289,7 +584,14 @@ class RecorderService : Service(), LocationListener {
     }
   }
 
-  private fun buildNotification(): Notification {
+  private fun updateNotification(next: Power.State, zone: String?) {
+    runCatching {
+      (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+        .notify(NOTIFICATION_ID, buildNotification(next, zone))
+    }
+  }
+
+  private fun buildNotification(next: Power.State, zone: String?): Notification {
     val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
     val contentIntent = PendingIntent.getActivity(
       this, 0, launchIntent,
@@ -302,7 +604,7 @@ class RecorderService : Service(), LocationListener {
     }
     return builder
       .setContentTitle("LightFog")
-      .setContentText("Recording your path")
+      .setContentText(Power.describe(next, zone))
       .setSmallIcon(android.R.drawable.ic_menu_mylocation)
       .setOngoing(true)
       .setContentIntent(contentIntent)
@@ -314,7 +616,17 @@ class RecorderService : Service(), LocationListener {
     @Volatile var isServiceRunning = false
     const val CHANNEL_ID = "lightfog_recording"
     const val NOTIFICATION_ID = 4207
-    const val MIN_DISTANCE_M = 5f
+
+    /**
+     * Metres a fix must differ by before the framework hands it to us.
+     *
+     * Raised from 5m. A fog cell is about ten metres across and the trail between two fixes is
+     * filled in with Bresenham, so fixes five metres apart drew nothing the previous one had not
+     * already drawn — they only woke the process to append a line. Twenty metres still lands in a
+     * neighbouring cell and cuts the callbacks a walk produces by roughly three quarters.
+     */
+    const val MIN_DISTANCE_M = 20f
+
     val ZONE_NAMES = listOf("home", "work")
 
     /** The zone the last fix was in, so a restart does not invent an arrival. */
@@ -322,5 +634,15 @@ class RecorderService : Service(), LocationListener {
 
     /** What Android says instead of a name when it will not tell you the network. */
     const val UNKNOWN_SSID = "<unknown ssid>"
+
+    /** Minutes without moving before the radio is switched off. */
+    const val DEFAULT_STILL_AFTER_MIN = 6
+
+    /** Sent to ourselves by the watchdog alarm to end a still pause. */
+    const val ACTION_WAKE = "expo.modules.recorder.WAKE"
+    private const val WAKE_REQUEST = 4208
+
+    /** How long the SSID takes to become readable after the network is available. */
+    private const val SSID_SETTLE_MS = 2_500L
   }
 }

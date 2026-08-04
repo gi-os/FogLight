@@ -4,9 +4,15 @@ import { PermissionsAndroid } from "react-native";
 import {
   clearPrivacyNetwork,
   clearPrivacyZone,
+  motionGating,
+  type PowerState,
+  powerState,
+  setMotionGating,
   setPrivacyNetwork,
   setPrivacyZone,
+  setStillAfterMinutes,
   setTileSync,
+  stillAfterMinutes,
 } from "@/modules/recorder";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
@@ -57,6 +63,9 @@ export default function SettingsScreen() {
   const [appKey, setAppKeyState] = useState("");
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [gating, setGating] = useState(true);
+  const [stillAfter, setStillAfter] = useState(6);
+  const [power, setPower] = useState<PowerState>("ACTIVE");
   const version = Constants.expoConfig?.version;
   const headerTitle = version ? `Settings (v${version})` : "Settings";
 
@@ -65,8 +74,30 @@ export default function SettingsScreen() {
       getAppKey().then((k) => setAppKeyState(k ?? ""));
       isConnected().then(setConnected);
       setStatus(null);
+      // Read from native, not from a stored copy — the service is what decided, and it decided
+      // while this screen was closed.
+      setGating(motionGating());
+      setStillAfter(stillAfterMinutes());
+      setPower(powerState());
     }, [])
   );
+
+  const POWER_LABEL: Record<PowerState, string> = {
+    ACTIVE: "GPS on — recording.",
+    PAUSED_ZONE: "GPS off — you're on a home or work network.",
+    PAUSED_STILL: "GPS off — nothing has moved. Motion will wake it.",
+  };
+
+  const changeGating = (enabled: boolean) => {
+    setGating(enabled);
+    setMotionGating(enabled);
+    setPower(powerState());
+  };
+
+  const changeStillAfter = (minutes: number) => {
+    setStillAfter(minutes);
+    setStillAfterMinutes(minutes);
+  };
 
   /**
    * Mark the Wi-Fi you are on as home or work.
@@ -203,10 +234,34 @@ export default function SettingsScreen() {
       />
 
       <StyledText style={{ fontSize: n(16), marginTop: n(24), marginBottom: n(8) }}>
+        BATTERY
+      </StyledText>
+      <StyledText style={{ fontSize: n(12), opacity: 0.6, marginBottom: n(8) }}>
+        {POWER_LABEL[power]}
+      </StyledText>
+      <ToggleSwitch
+        label="Pause When Still"
+        onValueChange={changeGating}
+        value={gating}
+      />
+      {gating && (
+        <SliderRow
+          format={(v) => `${v} min`}
+          label="Still After"
+          max={30}
+          min={2}
+          onChange={changeStillAfter}
+          step={1}
+          value={stillAfter}
+        />
+      )}
+
+      <StyledText style={{ fontSize: n(16), marginTop: n(24), marginBottom: n(8) }}>
         PRIVACY ZONES
       </StyledText>
       <StyledText style={{ fontSize: n(12), opacity: 0.6, marginBottom: n(8) }}>
-        Recording pauses on these networks, and within 500m of these spots.
+        The GPS switches off on these networks — not just the track. Within 500m of these spots the
+        fixes are dropped, but the radio stays on, because leaving a circle takes a fix to notice.
       </StyledText>
       <StyledButton
         onPress={() => (netHome ? clearZoneNetwork("home") : setZoneNetwork("home"))}

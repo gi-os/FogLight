@@ -96,6 +96,44 @@ export function currentNetwork(): string | null {
   return RecorderModule?.currentNetwork() ?? null;
 }
 
+/** Why the GPS is off, if it is. */
+export type PowerState = "ACTIVE" | "PAUSED_ZONE" | "PAUSED_STILL";
+
+/**
+ * What the recorder is doing with the GPS radio.
+ *
+ * A paused recorder and a broken one produce the same thing — no fixes — so this is what lets the
+ * UI say "paused, you're on your home Wi-Fi" instead of showing an on switch and an empty track.
+ */
+export function powerState(): PowerState {
+  return (RecorderModule?.powerState() as PowerState) ?? "ACTIVE";
+}
+
+/**
+ * Switch the GPS off when the phone has not moved, and let a hardware motion trigger wake it.
+ *
+ * On by default. The zones handle home and work; this handles everywhere else you sit still, which
+ * on most days is more hours than both of them. The trigger is a sensor-hub interrupt, so a paused
+ * recorder costs a fraction of a milliamp — and an hourly alarm looks again anyway, in case the
+ * trigger is never delivered.
+ */
+export function setMotionGating(enabled: boolean): void {
+  RecorderModule?.setMotionGating(enabled);
+}
+
+export function motionGating(): boolean {
+  return RecorderModule?.motionGating() ?? true;
+}
+
+/** Minutes of not moving before the radio goes off. Clamped to 1–60 natively. */
+export function setStillAfterMinutes(minutes: number): void {
+  RecorderModule?.setStillAfterMinutes(minutes);
+}
+
+export function stillAfterMinutes(): number {
+  return RecorderModule?.stillAfterMinutes() ?? 6;
+}
+
 /** Rasterize a world overview PNG from a directory of FoW tile files. */
 export async function fowRenderOverview(
   dirPath: string,

@@ -79,17 +79,30 @@ jobs:
           cp android/app/build/outputs/apk/release/app-release.apk \
              LightFog-v${{ steps.ver.outputs.name }}.apk
 
+      # What changed, from CHANGELOG.md, so a release says something. The top section is whatever
+      # sits between the first `## ` heading and the next one — nothing to remember at release time
+      # beyond writing the changelog entry with the change itself.
+      - name: Release notes from CHANGELOG
+        id: notes
+        run: |
+          {
+            echo 'body<<CHANGELOG_EOF'
+            awk '/^## /{n++} n==1' CHANGELOG.md || true
+            echo ''
+            echo '---'
+            echo ''
+            echo '**Install / update via Obtainium** — point it at this repo:'
+            echo '`https://github.com/gi-os/LightFog`'
+            echo ''
+            echo 'Or sideload with ADB:'
+            echo '`adb install -r LightFog-v${{ steps.ver.outputs.name }}.apk`'
+            echo 'CHANGELOG_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.name }}
           name: LightFog v${{ steps.ver.outputs.name }}
-          body: |
-            Automated build of LightFog — Fog of World companion for the Light Phone III.
-
-            **Install / update via Obtainium** — point it at this repo:
-            `https://github.com/gi-os/LightFog`
-
-            Or sideload with ADB:
-            `adb install -r LightFog-v${{ steps.ver.outputs.name }}.apk`
+          body: ${{ steps.notes.outputs.body }}
           files: LightFog-v${{ steps.ver.outputs.name }}.apk

@@ -1,13 +1,32 @@
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { PermissionsAndroid } from "react-native";
-import { recordingError, startRecording, stopRecording } from "@/modules/recorder";
+import {
+  type PowerState,
+  powerState,
+  recordingError,
+  startRecording,
+  stopRecording,
+} from "@/modules/recorder";
 import ContentContainer from "@/components/ContentContainer";
 import { StyledButton } from "@/components/StyledButton";
 import { StyledText } from "@/components/StyledText";
 import { usePersistedState } from "@/hooks/usePersistedState";
 import { readDay, todayKey } from "@/services/trackStore";
 import { n } from "@/utils/scaling";
+
+/**
+ * What "on" looks like when the GPS is deliberately off.
+ *
+ * Recording on and no points arriving is the same picture as recording broken, and the difference is
+ * the whole feature — so the pause says so here rather than leaving the old unconditional
+ * "Recording" to be quietly wrong for most of the day.
+ */
+const RECORDING_LABEL: Record<PowerState, string> = {
+  ACTIVE: "Recording — leave it running, the fog clears itself.",
+  PAUSED_ZONE: "Paused — on a home or work network. GPS is off.",
+  PAUSED_STILL: "Paused — nothing has moved. Motion turns the GPS back on.",
+};
 
 const INTERVAL_OPTIONS = ["5s", "10s", "30s", "60s"] as const;
 const INTERVAL_MS: Record<string, number> = {
@@ -23,6 +42,7 @@ export default function RecordScreen() {
   const [interval, setIntervalPref] = usePersistedState("recordInterval", "10s");
   const [pointsToday, setPointsToday] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
+  const [power, setPower] = useState<PowerState>("ACTIVE");
 
   // Whenever intent is on (including after app restart), ensure the service is running — and take
   // no for an answer. A refusal is shown rather than retried: the native side only refuses for
@@ -39,6 +59,7 @@ export default function RecordScreen() {
   useFocusEffect(
     useCallback(() => {
       readDay(todayKey()).then((pts) => setPointsToday(pts.length));
+      setPower(powerState());
       // The service may have stood down while we were away — it says why, and it survives the app
       // being killed, so this is the one place the reason can actually be read.
       setProblem((current) => current ?? recordingError());
@@ -91,9 +112,7 @@ export default function RecordScreen() {
         />
       ))}
       <StyledText style={{ fontSize: n(14), marginTop: n(16) }}>
-        {recordOn
-          ? "Recording — leave it running, the fog clears itself."
-          : "Not recording."}
+        {recordOn ? RECORDING_LABEL[power] : "Not recording."}
       </StyledText>
       <StyledText style={{ fontSize: n(14), marginTop: n(8) }}>
         Points today: {pointsToday}

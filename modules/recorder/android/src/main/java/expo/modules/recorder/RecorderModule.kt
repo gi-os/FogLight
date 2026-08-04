@@ -127,13 +127,59 @@ class RecorderModule : Module() {
       val context = appContext.reactContext ?: return@Function null
       val ssid = currentSsid(context) ?: return@Function null
       prefs(context).edit().putString("net_$name", ssid).apply()
+      nudge(context)
       ssid
     }
 
     Function("clearPrivacyNetwork") { name: String ->
       val context = appContext.reactContext ?: return@Function null
       prefs(context).edit().remove("net_$name").apply()
+      nudge(context)
       null
+    }
+
+    /**
+     * Turn the radio off when nothing has moved for a while.
+     *
+     * The other half of the battery answer. Home and work cover the hours the phone sits on a known
+     * network; this covers every other desk, restaurant and cinema seat, where a fix a minute buys
+     * the same coordinate over and over. A hardware motion trigger ends it, so being paused costs a
+     * fraction of a milliamp rather than the tens a fix costs.
+     */
+    Function("setMotionGating") { enabled: Boolean ->
+      val context = appContext.reactContext ?: return@Function null
+      prefs(context).edit().putBoolean(KEY_MOTION_GATING, enabled).apply()
+      nudge(context)
+      null
+    }
+
+    Function("motionGating") {
+      val context = appContext.reactContext ?: return@Function true
+      prefs(context).getBoolean(KEY_MOTION_GATING, true)
+    }
+
+    Function("setStillAfterMinutes") { minutes: Int ->
+      val context = appContext.reactContext ?: return@Function null
+      prefs(context).edit().putInt(KEY_STILL_AFTER_MIN, minutes.coerceIn(1, 60)).apply()
+      nudge(context)
+      null
+    }
+
+    Function("stillAfterMinutes") {
+      val context = appContext.reactContext
+        ?: return@Function RecorderService.DEFAULT_STILL_AFTER_MIN
+      prefs(context).getInt(KEY_STILL_AFTER_MIN, RecorderService.DEFAULT_STILL_AFTER_MIN)
+    }
+
+    /**
+     * Why the radio is off: `ACTIVE`, `PAUSED_ZONE` or `PAUSED_STILL`.
+     *
+     * Worth surfacing because a paused recorder and a broken recorder look identical from outside —
+     * no fixes either way. Someone who cannot tell which one they have will turn the feature off.
+     */
+    Function("powerState") {
+      val context = appContext.reactContext ?: return@Function "ACTIVE"
+      prefs(context).getString(KEY_POWER_STATE, "ACTIVE") ?: "ACTIVE"
     }
 
     /** The network saved for a zone, so the settings screen can show what it will match. */
@@ -207,7 +253,31 @@ class RecorderModule : Module() {
     /** Why recording stopped itself, for the UI to explain rather than silently show "off". */
     const val KEY_LAST_ERROR = "lastError"
 
+    /** Whether a phone that has not moved is allowed to switch its GPS off. */
+    const val KEY_MOTION_GATING = "motionGating"
+
+    /** Minutes of not moving before it does. */
+    const val KEY_STILL_AFTER_MIN = "stillAfterMin"
+
+    /** The service's last [Power.State], so the UI can explain a radio that is off on purpose. */
+    const val KEY_POWER_STATE = "powerState"
+
     fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /**
+     * Tell a running recorder that something it decides on has changed.
+     *
+     * `onStartCommand` re-evaluates the power policy, so starting an already-running service is how
+     * a settings change reaches it — naming your current Wi-Fi as home should switch the radio off
+     * now, not at the next fix. **Only when it is already running**: this must never be the thing
+     * that starts a recorder, because a background start of a location service is exactly the call
+     * that once threw and took the phone's UI down with it.
+     */
+    fun nudge(context: Context) {
+      if (!prefs(context).getBoolean(KEY_RUNNING, false)) return
+      if (!RecorderService.isServiceRunning) return
+      runCatching { context.startService(Intent(context, RecorderService::class.java)) }
+    }
 
     /**
      * The Wi-Fi network's name, or null.
