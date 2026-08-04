@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.12.1 — The GPS was already off; the Wi-Fi callback was the drain
+
+v0.12.0 did switch the radio off at work. The Record screen said so, the state was `PAUSED_ZONE`,
+and the battery still went. The pause was never the problem — what was left running around it was.
+
+**`onCapabilitiesChanged` is a firehose, not an event.** `WifiInfo` lives inside
+`NetworkCapabilities`, so every RSSI and link-speed change on the connected network is delivered to
+the callback — seconds apart, all day. v0.12.0 ran the entire power policy on each one, *plus* a
+second run 2.5s later, and every run made a `WifiManager` binder call (which notes an app-op in
+`system_server`), read prefs, and looked up a sensor. On a quiet home router that is waste. In an
+office — dozens of APs, constant roaming, a hundred other clients moving the RSSI around — it is a
+process that is never permitted to go idle. That asymmetry is exactly why home improved and work
+did not.
+
+Now the SSID is read from the capabilities object already in hand, via
+`FLAG_INCLUDE_LOCATION_INFO`, and if it has not changed the callback returns having done nothing.
+No binder call, no app-op, no prefs read. The sensor lookup is cached for the life of the process.
+
+**An unreadable name is no longer read as "you left".** This is the expensive one. `getSSID()`
+returns `<unknown ssid>` whenever the platform declines, and a momentary app-op or
+location-attribution hiccup is enough. v0.12.0 took that as leaving the zone and started the GPS —
+then the next event stopped it again. Flapping costs more than either state, because a cold GPS
+reacquisition is the most expensive thing that receiver does, and doing it all day is worse than
+simply having left it on. Presence now comes from the Wi-Fi transport (`hasTransport`, plain
+`ACCESS_NETWORK_STATE`, nothing to redact) and identity from the SSID; while Wi-Fi is up, an
+unreadable name keeps the last known one. The re-read is capped at two attempts, because an
+unconditional retry is how a poll gets built by accident.
+
+**"Not recording — recorder module unavailable" was never true.** A pre-existing bug, unrelated to
+battery but visible the whole time: `start()` returns `null` to mean *started*, and the JS wrapper
+was `RecorderModule?.start(…) ?? "recorder module unavailable"`, so `??` turned every success into
+that error. It also meant `if (!refused) setRecordOn(true)` never ran, so the Start button never
+stuck — recording only stayed on for anyone whose preference predated the bug.
+
+**Settings → Battery now shows the live SSID against the saved ones.** A saved network and a live
+one that differ by a band suffix read identically in a sentence and not at all side by side.
+`NetworkCallback`'s flags constructor is API 31, so pre-31 keeps the no-arg one — `minSdk` is 24
+here and a constructor that does not exist is a `NoSuchMethodError`, not a graceful fallback.
+
 ## v0.12.0 — The GPS is off when a fix would be thrown away
 
 LightFog was using around 70% of a day's battery. The cause was not the interval or the

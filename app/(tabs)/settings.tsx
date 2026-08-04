@@ -4,6 +4,7 @@ import { PermissionsAndroid } from "react-native";
 import {
   clearPrivacyNetwork,
   clearPrivacyZone,
+  currentNetwork,
   motionGating,
   type PowerState,
   powerState,
@@ -66,6 +67,7 @@ export default function SettingsScreen() {
   const [gating, setGating] = useState(true);
   const [stillAfter, setStillAfter] = useState(6);
   const [power, setPower] = useState<PowerState>("ACTIVE");
+  const [liveNet, setLiveNet] = useState<string | null>(null);
   const version = Constants.expoConfig?.version;
   const headerTitle = version ? `Settings (v${version})` : "Settings";
 
@@ -79,6 +81,7 @@ export default function SettingsScreen() {
       setGating(motionGating());
       setStillAfter(stillAfterMinutes());
       setPower(powerState());
+      setLiveNet(currentNetwork());
     }, [])
   );
 
@@ -238,6 +241,13 @@ export default function SettingsScreen() {
       </StyledText>
       <StyledText style={{ fontSize: n(12), opacity: 0.6, marginBottom: n(8) }}>
         {POWER_LABEL[power]}
+      </StyledText>
+      {/* The comparison that diagnoses a zone which will not match. A saved SSID and a live one that
+          differ by a band suffix look identical in a sentence and not at all side by side. */}
+      <StyledText style={{ fontSize: n(12), opacity: 0.6, marginBottom: n(8) }}>
+        {`On now: ${liveNet ?? "no Wi-Fi (or Android won't say)"}\nSaved: home ${
+          netHome ?? "—"
+        }, work ${netWork ?? "—"}`}
       </StyledText>
       <ToggleSwitch
         label="Pause When Still"

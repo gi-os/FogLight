@@ -20,6 +20,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.net.wifi.WifiInfo
 import android.net.wifi.WifiManager
 import android.location.LocationListener
 import android.location.LocationManager
@@ -63,6 +64,27 @@ class RecorderService : Service(), LocationListener {
 
   private var networkCallback: ConnectivityManager.NetworkCallback? = null
   private var motionListener: TriggerEventListener? = null
+
+  /** The last network name we acted on. Null is a real answer, hence the separate flag. */
+  private var lastSeenSsid: String? = null
+  private var haveSeenSsid = false
+
+  /** Re-reads spent on an unnamed network since it was last readable. Bounded, so it is not a poll. */
+  private var settleTries = 0
+
+  /**
+   * Looked up once, not per policy run.
+   *
+   * `getSystemService` + `getDefaultSensor` on every decision was cheap individually and not cheap
+   * multiplied by an office network's capability updates. The answer cannot change while the process
+   * lives, so it is cached — including the null, which is why this is `lazy` and not `?:`.
+   */
+  private val motionSensor: Sensor? by lazy {
+    runCatching {
+      (getSystemService(Context.SENSOR_SERVICE) as? SensorManager)
+        ?.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION)
+    }.getOrNull()
+  }
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -145,6 +167,7 @@ class RecorderService : Service(), LocationListener {
 
   override fun onDestroy() {
     handler.removeCallbacks(nightlyCheck)
+    handler.removeCallbacks(settleCheck)
     stopLocationUpdates()
     disarmMotion()
     cancelWatchdog()
@@ -196,7 +219,7 @@ class RecorderService : Service(), LocationListener {
     val next = Power.decide(
       inZone = zone != null,
       gating = gating,
-      canSenseMotion = motionSensor() != null,
+      canSenseMotion = motionSensor != null,
       stillFor = stillFor(),
       stillAfterMs = stillAfterMs(),
     )
@@ -266,11 +289,6 @@ class RecorderService : Service(), LocationListener {
     return minutes.coerceAtLeast(1).toLong() * 60_000L
   }
 
-  private fun motionSensor(): Sensor? = runCatching {
-    (getSystemService(Context.SENSOR_SERVICE) as? SensorManager)
-      ?.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION)
-  }.getOrNull()
-
   /**
    * Ask the hardware to tell us when the phone is carried somewhere.
    *
@@ -282,7 +300,7 @@ class RecorderService : Service(), LocationListener {
   private fun armMotion() {
     if (motionListener != null) return
     val manager = getSystemService(Context.SENSOR_SERVICE) as? SensorManager ?: return
-    val sensor = manager.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION) ?: return
+    val sensor = motionSensor ?: return
     val listener = object : TriggerEventListener() {
       override fun onTrigger(event: TriggerEvent?) {
         motionListener = null // consumed by the framework, so forget it before re-arming anything
@@ -300,7 +318,7 @@ class RecorderService : Service(), LocationListener {
     val listener = motionListener ?: return
     motionListener = null
     val manager = getSystemService(Context.SENSOR_SERVICE) as? SensorManager ?: return
-    val sensor = manager.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION) ?: return
+    val sensor = motionSensor ?: return
     runCatching { manager.cancelTriggerSensor(listener, sensor) }
   }
 
@@ -352,23 +370,27 @@ class RecorderService : Service(), LocationListener {
    * Notice the Wi-Fi changing, because that is what ends a zone pause.
    *
    * A callback on a Wi-Fi network request rather than a poll: the pause has to end the moment you
-   * walk out of the door, and it has to end without the radio being on to notice. The SSID lags the
-   * callback by a moment — the network is available before it is named — so each event re-checks
-   * after a short delay as well as immediately.
+   * walk out of the door, and it has to end without the radio being on to notice.
+   *
+   * **`onCapabilitiesChanged` is not an event, it is a firehose.** `WifiInfo` rides inside
+   * `NetworkCapabilities`, so every RSSI and link-speed update on the connected network is delivered
+   * here — seconds apart, all day. The first version of this ran the whole policy on each one, plus a
+   * second run 2.5s later, and each run made a `WifiManager` binder call (which notes an app-op in
+   * system_server), read prefs and looked up a sensor. On a quiet home router that is wasteful. On an
+   * office network — dozens of APs, constant roaming, a hundred other clients moving the RSSI around —
+   * it is a process that is never allowed to go idle, which is how the GPS could be genuinely off at
+   * work and the battery still gone.
+   *
+   * So the SSID is read from the capabilities object that was already handed to us, and if it has not
+   * changed this returns having done nothing at all.
    */
   private fun watchNetworks() {
     if (networkCallback != null) return
     val manager = getSystemService(ConnectivityManager::class.java) ?: return
-    val callback = object : ConnectivityManager.NetworkCallback() {
-      override fun onAvailable(network: Network) = recheck("wifi available")
-      override fun onLost(network: Network) = recheck("wifi lost")
-      override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) =
-        recheck("wifi changed")
-
-      private fun recheck(reason: String) {
-        handler.post { applyPolicy(reason) }
-        handler.postDelayed({ applyPolicy("$reason (settled)") }, SSID_SETTLE_MS)
-      }
+    val callback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      ZoneWatch(ConnectivityManager.NetworkCallback.FLAG_INCLUDE_LOCATION_INFO)
+    } else {
+      ZoneWatch()
     }
     val request = NetworkRequest.Builder()
       .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
@@ -377,6 +399,96 @@ class RecorderService : Service(), LocationListener {
       networkCallback = callback
     }
   }
+
+  /**
+   * The Wi-Fi watcher, in two constructor flavours because the useful one did not always exist.
+   *
+   * Since API 31 the objects delivered to a `NetworkCallback` have location-sensitive fields stripped
+   * *even from an app holding the permission*, unless the callback was built asking for them with
+   * `FLAG_INCLUDE_LOCATION_INFO` — and asking is what makes `transportInfo` usable instead of a
+   * `WifiManager` round trip per event. That flags constructor is itself API 31, so on anything older
+   * the no-arg one has to be used: `minSdk` here is 24, and a constructor that does not exist is a
+   * `NoSuchMethodError`, not a graceful degradation. The pre-31 path then falls back to reading the
+   * SSID the old way, which on those versions was never redacted like this in the first place.
+   */
+  private inner class ZoneWatch : ConnectivityManager.NetworkCallback {
+    constructor() : super()
+
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.S)
+    constructor(flags: Int) : super(flags)
+
+    override fun onAvailable(network: Network) = recheck("wifi available", null)
+    override fun onLost(network: Network) = recheck("wifi lost", null)
+    override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) =
+      recheck("wifi changed", caps)
+
+    private fun recheck(reason: String, caps: NetworkCapabilities?) {
+      onNetworkNamed(reason, ssidFrom(caps) ?: currentSsid())
+    }
+  }
+
+  /** The SSID already inside the capabilities we were given, without a binder call of our own. */
+  private fun ssidFrom(caps: NetworkCapabilities?): String? = runCatching {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return null
+    val info = caps?.transportInfo as? WifiInfo ?: return null
+    info.ssid?.trim('"')?.takeIf { it.isNotBlank() && it != UNKNOWN_SSID }
+  }.getOrNull()
+
+  /**
+   * Act on the network's name, and only when it is news.
+   *
+   * The early return is the whole point: an unchanged SSID means an unchanged answer, so the firehose
+   * of capability updates costs one string comparison. `haveSeenSsid` is separate from the value
+   * because null is a real answer — no Wi-Fi — and has to be distinguishable from "not asked yet",
+   * or the very first event after losing Wi-Fi would be swallowed.
+   *
+   * **A name we could not read is not a network we are not on.** This is the expensive distinction.
+   * `getSSID()` returns `<unknown ssid>` whenever the platform declines — a momentary app-op or
+   * location-attribution hiccup is enough — and treating that as "you left work" resumes the GPS,
+   * then the next event puts it away again. Flapping is far worse than either state: a cold GPS
+   * reacquisition is the most expensive thing that radio does, and doing it repeatedly all day costs
+   * more than simply leaving the receiver on would have. So while Wi-Fi is still up, an unreadable
+   * name keeps the last known one and asks again shortly. Only Wi-Fi actually going away clears it —
+   * and that is read from the transport, which carries no location-sensitive field to be redacted.
+   */
+  private fun onNetworkNamed(reason: String, ssid: String?) {
+    val unreadable = ssid == null && wifiIsUp()
+    val resolved = if (unreadable && haveSeenSsid) lastSeenSsid else ssid
+
+    // A network is available a moment before it can be named, so an unnamed reading deserves another
+    // look — but a *bounded* number of them. An unconditional re-check is how a poll gets built by
+    // accident: if the name never becomes readable, a 2.5s retry is a 2.5s poll forever, which is the
+    // very cost this whole change exists to remove. Two tries, then live with the last known name
+    // until a readable event or a genuine Wi-Fi loss arrives on its own.
+    handler.removeCallbacks(settleCheck)
+    if (ssid == null && settleTries < MAX_SETTLE_TRIES) {
+      settleTries++
+      handler.postDelayed(settleCheck, SSID_SETTLE_MS)
+    }
+    if (ssid != null) settleTries = 0
+
+    if (haveSeenSsid && resolved == lastSeenSsid) return
+    lastSeenSsid = resolved
+    haveSeenSsid = true
+    handler.post { applyPolicy(reason) }
+  }
+
+  private val settleCheck = Runnable { onNetworkNamed("wifi settled", currentSsid()) }
+
+  /**
+   * Whether Wi-Fi is up at all, which is the one part of this that cannot be redacted.
+   *
+   * `hasTransport` is plain `ACCESS_NETWORK_STATE` — no location permission, no app-op, no
+   * foreground requirement — so it is the trustworthy half of the question. Presence comes from here;
+   * identity comes from the SSID. Keeping them apart is what stops an unreadable name from being
+   * mistaken for an absent network.
+   */
+  private fun wifiIsUp(): Boolean = runCatching {
+    val manager = getSystemService(ConnectivityManager::class.java) ?: return false
+    val active = manager.activeNetwork ?: return false
+    manager.getNetworkCapabilities(active)
+      ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+  }.getOrDefault(false)
 
   private fun unwatchNetworks() {
     val callback = networkCallback ?: return
@@ -644,5 +756,8 @@ class RecorderService : Service(), LocationListener {
 
     /** How long the SSID takes to become readable after the network is available. */
     private const val SSID_SETTLE_MS = 2_500L
+
+    /** Re-reads before accepting that the name is not coming. Two, not a poll. */
+    private const val MAX_SETTLE_TRIES = 2
   }
 }

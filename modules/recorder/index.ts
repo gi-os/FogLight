@@ -11,7 +11,12 @@ const RecorderModule = requireOptionalNativeModule("Recorder");
  * crash loop that filled the task stack with permission dialogs and took the phone's UI with it.
  */
 export function startRecording(intervalMs = 10_000): string | null {
-  return RecorderModule?.start(intervalMs) ?? "recorder module unavailable";
+  // The module's absence has to be tested separately from its answer. `start()` returns **null to
+  // mean started**, so `?? "unavailable"` turned every success into a failure: the Record screen
+  // read "Not recording — recorder module unavailable" over a service that was running perfectly,
+  // and `if (!refused) setRecordOn(true)` in record.tsx never ran, so the button never stuck.
+  if (!RecorderModule) return "recorder module unavailable";
+  return RecorderModule.start(intervalMs) ?? null;
 }
 
 /** Why recording last stopped itself, or null. Survives the app being killed. */
