@@ -1,10 +1,10 @@
-# LightFog
+# FogLight
 
 A [Fog of World](https://fogofworld.app) companion client for the Light Phone III.
 Record where you go, watch the fog clear over an OpenStreetMap base map, and send the
 tracks to the cloud so the real Fog of World app on another device can import them.
 
-The main app stays the source of truth. LightFog is a thin client on purpose. No
+The main app stays the source of truth. FogLight is a thin client on purpose. No
 achievements, no editing.
 
 Part of the [gi-os Light App collection](#the-gi-os-light-app-collection).
@@ -21,8 +21,8 @@ Part of the [gi-os Light App collection](#the-gi-os-light-app-collection).
 ## How it fits together
 
 ```
-LightFog (LP3)  --GPX-->  Dropbox  --Import GPX-->  Fog of World (iPhone)
-LightFog (LP3)  <--read-only Sync/ tiles--  Fog of World cloud auto-sync
+FogLight (LP3)  --GPX-->  Dropbox  --Import GPX-->  Fog of World (iPhone)
+FogLight (LP3)  <--read-only Sync/ tiles--  Fog of World cloud auto-sync
 ```
 
 ## What it does
@@ -76,15 +76,15 @@ Four rules came out of it, and they generalise past this app:
 ## Install
 
 Download the APK from
-[Releases](https://github.com/gi-os/LightFog/releases/latest), or add
-`https://github.com/gi-os/LightFog` to
+[Releases](https://github.com/gi-os/FogLight/releases/latest), or add
+`https://github.com/gi-os/FogLight` to
 [Obtainium](https://github.com/ImranR98/Obtainium) for updates.
 
 ```sh
 adb install -r LightFog-vX.Y.Z.apk
 ```
 
-Turn off battery optimization for LightFog, and grant background location if you want
+Turn off battery optimization for FogLight, and grant background location if you want
 it:
 
 ```sh
@@ -120,7 +120,7 @@ the versions the template is known to work with, because codegen breaks on a mis
 
 - **[garado](https://github.com/garado)** wrote
   [light-topographic](https://github.com/garado/light-topographic), an outdoor maps app
-  for the Light Phone III. LightFog is a fork of it, not a fork of a bare template. The
+  for the Light Phone III. FogLight is a fork of it, not a fork of a bare template. The
   map layer here is his work: `utils/mapStyle.ts` and `utils/mapStyle/`, `utils/geo.ts`,
   `utils/parseGpx.ts` and `utils/units.ts` all come from light-topographic, and this repo
   only strips the layer picker out of `buildMapStyle` and adds the fog source. Thank you.
@@ -133,7 +133,7 @@ the versions the template is known to work with, because codegen breaks on a mis
   which documents the Fog of World sync format. The native tile codec in this repo reads
   that format because of that work. The repo is archived now and
   [fog-machine](https://github.com/CaviarChen/fog-machine) succeeds it. Thank you.
-- **[Fog of World](https://fogofworld.app)** is the app this one feeds. LightFog is an
+- **[Fog of World](https://fogofworld.app)** is the app this one feeds. FogLight is an
   unofficial companion and the Fog of World team has no part in it.
 - **[MapLibre](https://maplibre.org/)** renders the map. Map data is copyright
   OpenStreetMap contributors.
@@ -149,17 +149,17 @@ Twelve tools for the Light Phone III, all open source, all built in one run.
 
 | Tool | What it does | Built on |
 | --- | --- | --- |
-| [LightPass](https://github.com/gi-os/LightPass) | Photograph a movie ticket, keep the stub | Plain Android |
+| [BrightPasses](https://github.com/gi-os/BrightPasses) | Photograph a movie ticket, keep the stub | Plain Android |
 | [LightQR](https://github.com/gi-os/LightQR) | QR scanner, plus a browser generator | Plain Android |
-| [LightRSS](https://github.com/gi-os/LightRSS) | RSS and Atom reader with images and QR subscribe | light-sdk, fork of [zachattack323/LightRSS](https://github.com/zachattack323/LightRSS) |
-| [LightNYCSubway](https://github.com/gi-os/LightNYCSubway) | Live MTA subway arrivals | light-sdk fork |
+| [BrightNews](https://github.com/gi-os/BrightNews) | RSS and Atom reader with images and QR subscribe | light-sdk, fork of [zachattack323/LightRSS](https://github.com/zachattack323/LightRSS) |
+| [BrightTransit](https://github.com/gi-os/BrightTransit) | Live MTA subway arrivals | light-sdk fork |
 | [chat](https://github.com/gi-os/chat) | iMessage over a self-hosted BlueBubbles server | Fork of [craigeley/chat](https://github.com/craigeley/chat) |
-| **LightFog** (this repo) | Fog of World companion, GPS recorder and fog map | Fork of [garado/light-topographic](https://github.com/garado/light-topographic) |
-| [LightNonogram](https://github.com/gi-os/LightNonogram) | Picross, plus a generator that only ships solvable puzzles | Kotlin generator, light-sdk tool |
-| [LightSolitaire](https://github.com/gi-os/LightSolitaire) | Klondike, draw one, unlimited redeals | light-sdk |
-| [LightFastread](https://github.com/gi-os/LightFastread) | RSVP speed reader for EPUB and MOBI | Fork of [fluffyspace/FastRead](https://github.com/fluffyspace/FastRead) |
-| [LightTip](https://github.com/gi-os/LightTip) | Tip calculator, plus a receipt splitter that reads the line items | Plain Android |
-| [LightNoise](https://github.com/gi-os/LightNoise) | Twelve synthesized sounds, a two-layer mixer and a sleep timer | Plain Android |
+| **FogLight** (this repo) | Fog of World companion, GPS recorder and fog map | Fork of [garado/light-topographic](https://github.com/garado/light-topographic) |
+| [BrightNonogram](https://github.com/gi-os/BrightNonogram) | Picross, plus a generator that only ships solvable puzzles | Kotlin generator, light-sdk tool |
+| [BrightSolitaire](https://github.com/gi-os/BrightSolitaire) | Klondike, draw one, unlimited redeals | light-sdk |
+| [BrightLibrary](https://github.com/gi-os/BrightLibrary) | RSVP speed reader for EPUB and MOBI | Fork of [fluffyspace/FastRead](https://github.com/fluffyspace/FastRead) |
+| [BrightTip](https://github.com/gi-os/BrightTip) | Tip calculator, plus a receipt splitter that reads the line items | Plain Android |
+| [BrightNoise](https://github.com/gi-os/BrightNoise) | Twelve synthesized sounds, a two-layer mixer and a sleep timer | Plain Android |
 | [LightPods](https://github.com/gi-os/LightPods) | AirPods battery, in-ear and lid status | Plain Android, ports [LibrePods](https://github.com/kavishdevar/librepods) |
 
 The Light Phone does not sponsor or endorse any of these. Licences vary per repo.
@@ -170,7 +170,7 @@ Unsettled, and worth reading before you copy anything from here.
 
 Neither [light-topographic](https://github.com/garado/light-topographic) nor
 [light-template](https://github.com/vandamd/light-template) carries a LICENSE file, so
-both stay under default copyright. LightFog contains code from both. This repo therefore
+both stay under default copyright. FogLight contains code from both. This repo therefore
 cannot put an open-source license over the whole tree, and it does not try to.
 
 The original work in this repo, which is `modules/recorder/`, `utils/fog/`, the fog
