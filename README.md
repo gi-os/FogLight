@@ -4,6 +4,17 @@ A [Fog of World](https://fogofworld.app) companion client for the Light Phone II
 Record where you go, watch the fog clear over an OpenStreetMap base map, and send the
 tracks to the cloud so the real Fog of World app on another device can import them.
 
+## Install via BrightMarket
+
+<p align="center">
+  <img src="https://gi-os.github.io/brightmarket-index/assets/brightmarket-qr.png" alt="Scan to open BrightMarket" width="180" />
+</p>
+
+Scan the code above, or visit
+**[gi-os.github.io/brightmarket-index/browse.html](https://gi-os.github.io/brightmarket-index/browse.html)**, to install
+and keep this app updated through **BrightMarket** — no Play Store, no PC
+required.
+
 The main app stays the source of truth. FogLight is a thin client on purpose. No
 achievements, no editing.
 
