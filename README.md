@@ -13,7 +13,7 @@ tracks to the cloud so the real Fog of World app on another device can import th
 Scan the code above with **BrightMarket** installed to open FogLight there and
 install or update it directly. Don't have BrightMarket yet? Get it, and browse
 every Bright app, at
-**[gi-os.github.io/brightmarket-index/browse.html](https://gi-os.github.io/brightmarket-index/browse.html)**.
+**[brightmarket.gzl.dev](https://brightmarket.gzl.dev)**.
 
 The main app stays the source of truth. FogLight is a thin client on purpose. No
 achievements, no editing.
@@ -154,26 +154,6 @@ The release workflow comes from [LightQR](https://github.com/gi-os/LightQR). Pla
 Gradle in GitHub Actions beats an EAS build for a single-developer project, and it needs
 no Expo token.
 
-## The gi-os Light App collection
-
-Twelve tools for the Light Phone III, all open source, all built in one run.
-
-| Tool | What it does | Built on |
-| --- | --- | --- |
-| [BrightPasses](https://github.com/gi-os/BrightPasses) | Photograph a movie ticket, keep the stub | Plain Android |
-| [LightQR](https://github.com/gi-os/LightQR) | QR scanner, plus a browser generator | Plain Android |
-| [BrightNews](https://github.com/gi-os/BrightNews) | RSS and Atom reader with images and QR subscribe | light-sdk, fork of [zachattack323/LightRSS](https://github.com/zachattack323/LightRSS) |
-| [BrightTransit](https://github.com/gi-os/BrightTransit) | Live MTA subway arrivals | light-sdk fork |
-| [chat](https://github.com/gi-os/chat) | iMessage over a self-hosted BlueBubbles server | Fork of [craigeley/chat](https://github.com/craigeley/chat) |
-| **FogLight** (this repo) | Fog of World companion, GPS recorder and fog map | Fork of [garado/light-topographic](https://github.com/garado/light-topographic) |
-| [BrightNonogram](https://github.com/gi-os/BrightNonogram) | Picross, plus a generator that only ships solvable puzzles | Kotlin generator, light-sdk tool |
-| [BrightSolitaire](https://github.com/gi-os/BrightSolitaire) | Klondike, draw one, unlimited redeals | light-sdk |
-| [BrightLibrary](https://github.com/gi-os/BrightLibrary) | RSVP speed reader for EPUB and MOBI | Fork of [fluffyspace/FastRead](https://github.com/fluffyspace/FastRead) |
-| [BrightTip](https://github.com/gi-os/BrightTip) | Tip calculator, plus a receipt splitter that reads the line items | Plain Android |
-| [BrightNoise](https://github.com/gi-os/BrightNoise) | Twelve synthesized sounds, a two-layer mixer and a sleep timer | Plain Android |
-| [LightPods](https://github.com/gi-os/LightPods) | AirPods battery, in-ear and lid status | Plain Android, ports [LibrePods](https://github.com/kavishdevar/librepods) |
-
-The Light Phone does not sponsor or endorse any of these. Licences vary per repo.
 
 ## License
 
@@ -189,3 +169,21 @@ overlay and the Dropbox flow, is offered under MIT. Everything inherited from th
 projects above belongs to its authors under their terms. I have asked both authors to
 add a license. Until they do, treat this repository as source-available and ask them
 before you redistribute.
+
+<!-- bright-footer:begin -->
+---
+
+## Bright\*
+
+*Fog of World for a phone that will never have an App Store: record where you go, watch the fog clear.*
+
+26 open-source apps for the **Light Phone III** — camera, music, maps, messages,
+reading, transit, games. The phone has no app store, so they install by sideload: scan one
+code from **[brightmarket.gzl.dev](https://brightmarket.gzl.dev)** and BrightMarket keeps them updated.
+
+[Roll](https://github.com/gi-os/Roll) · [BrightMusic](https://github.com/gi-os/BrightMusic) · [BrightWay](https://github.com/gi-os/BrightWay) · [BrightChat](https://github.com/gi-os/BrightChat) · [BrightControl](https://github.com/gi-os/BrightControl) · [BrightRemote](https://github.com/gi-os/BrightRemote) · [browse all 26 →](https://brightmarket.gzl.dev)
+
+The Light Phone does not sponsor or endorse any of these. Built by
+[Giovanni Lupo](https://github.com/gi-os) — if this one is useful to you, a ⭐ helps the next
+person find it.
+<!-- bright-footer:end -->
