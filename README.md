@@ -175,8 +175,6 @@ before you redistribute.
 
 ## Bright\*
 
-*Fog of World for a phone that will never have an App Store: record where you go, watch the fog clear.*
-
 26 open-source apps for the **Light Phone III** — camera, music, maps, messages,
 reading, transit, games. The phone has no app store, so they install by sideload: scan one
 code from **[brightmarket.gzl.dev](https://brightmarket.gzl.dev)** and BrightMarket keeps them updated.
