@@ -18,7 +18,7 @@ every Bright app, at
 The main app stays the source of truth. FogLight is a thin client on purpose. No
 achievements, no editing.
 
-Part of the [gi-os Light App collection](#the-gi-os-light-app-collection).
+Part of the [Bright* collection](https://brightmarket.gzl.dev).
 
 ## Status
 
