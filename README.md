@@ -1,3 +1,5 @@
+<img src="assets/images/icon.png" alt="" width="72" align="left" />
+
 # FogLight
 
 A [Fog of World](https://fogofworld.app) companion client for the Light Phone III.
