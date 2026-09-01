@@ -91,6 +91,9 @@ class RecorderService : Service(), LocationListener {
   override fun onCreate() {
     super.onCreate()
     createChannel()
+    // KEEP policy: this line is a no-op on every start after the first. The worker itself does
+    // nothing until a fix has been seen, so scheduling it here costs the drawer-phone zero.
+    WeatherWorker.schedule(this)
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -535,6 +538,12 @@ class RecorderService : Service(), LocationListener {
 
   override fun onLocationChanged(location: Location) {
     trackStillness(location)
+
+    // Weather rides on the fix the track already paid for — rounded to ~1 km first, refreshed
+    // only when the cache has gone stale, and never the reason a radio is on. A fix inside a
+    // privacy zone still feeds this: the zone promise is about the track, and what leaves here
+    // is a neighbourhood-sized rounding, not a place.
+    WeatherFetcher.onFix(this, location.latitude, location.longitude)
 
     val zone = zoneAt(location)
     if (zone != null) {

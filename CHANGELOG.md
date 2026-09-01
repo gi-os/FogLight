@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.13.0 — Weather rides along
+
+The rest of the collection keeps wanting one line of weather, and every app that fetches its own
+would need a location permission to do it. This app already knows where the phone is — it is the
+only one allowed to — so it now serves today's weather to whoever asks, under the same discipline
+that governs everything else it does with a coordinate.
+
+**Strictly piggybacked, never chased.** A fetch happens in exactly two situations: a fix the track
+already paid for arrives and the cache is older than 45 minutes, or WorkManager's hourly batch
+window opens with a network attached. The hourly path reuses the **last known** coordinate — it
+never asks a location API for anything, and with no coordinate ever seen it does nothing at all.
+No alarm, no wake, no GPS request belongs to weather; a phone in a drawer pays zero. This is the
+app that once crash-looped a location service and took the phone down with it, so the rules are
+in a pure `Weather` object where the tests can hold them: `WeatherTest` pins the 45-minute
+staleness gate, the rounding, and the WMO vocabulary.
+
+**One request, one neighbourhood.** Open-Meteo (keyless, free), a single GET for current
+temperature, WMO weather code, today's high/low and precipitation probability. The coordinate is
+rounded to two decimals — about a kilometre — before it leaves the phone, which is both the
+privacy line and all the resolution weather has anyway.
+
+**Served on `content://com.gios.lightfog.weather/today`.** One read-only row: `updatedAt`,
+`tempC`, `hiC`, `loC`, `code`, `description`, `precipPct`. No coordinate in any column. A failed
+fetch keeps the stale cache and serves it with an honest timestamp — how old is too old is the
+reader's call — and nothing cached is an empty cursor, not an error.
+
 ## v0.12.1 — The GPS was already off; the Wi-Fi callback was the drain
 
 v0.12.0 did switch the radio off at work. The Record screen said so, the state was `PAUSED_ZONE`,

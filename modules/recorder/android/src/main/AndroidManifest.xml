@@ -31,5 +31,15 @@
       android:name="expo.modules.recorder.StaysProvider"
       android:authorities="com.gios.lightfog.stays"
       android:exported="true" />
+    <!--
+      Today's weather, for the rest of the collection — so nothing else ever needs a location
+      permission just to print a temperature. Weather only: no coordinate is in any column, and
+      the one behind the numbers was rounded to ~1 km before it left the phone. See
+      WeatherProvider.
+    -->
+    <provider
+      android:name="expo.modules.recorder.WeatherProvider"
+      android:authorities="com.gios.lightfog.weather"
+      android:exported="true" />
   </application>
 </manifest>

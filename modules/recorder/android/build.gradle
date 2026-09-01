@@ -12,7 +12,12 @@ android {
 }
 
 dependencies {
-  // Stays.kt is deliberately free of Android imports so the clustering can be checked without a
-  // device — which is where its mistakes live, not in the provider that serves it.
+  // The hourly weather refresh rides WorkManager's batch windows instead of owning an alarm —
+  // the whole point is that it can never wake the phone on its own.
+  implementation 'androidx.work:work-runtime-ktx:2.9.1'
+
+  // Stays.kt and Weather.kt are deliberately free of Android imports so the clustering and the
+  // fetch discipline can be checked without a device — which is where their mistakes live, not
+  // in the providers that serve them.
   testImplementation 'junit:junit:4.13.2'
 }
