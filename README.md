@@ -2,6 +2,8 @@
 
 # FogLight
 
+[**⬇ Download the latest APK**](https://github.com/gi-os/FogLight/releases/latest) · free, open source.
+
 A [Fog of World](https://fogofworld.app) companion client for the Light Phone III.
 Record where you go, watch the fog clear over an OpenStreetMap base map, and send the
 tracks to the cloud so the real Fog of World app on another device can import them.
